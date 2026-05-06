@@ -24,7 +24,6 @@ namespace GTK
         // ─── Save state ────────────────────────────────────────────────
         [SerializeField] private SaveFormat _saveFormat = SaveFormat.PNG;
         [SerializeField][Range(1, 100)] private int _jpgQuality = 85;
-        [SerializeField] private string _fileName = "MergedTexture";
 
         // ─── Preview ──────────────────────────────────────────────────
         private Texture2D _previewTex;
@@ -38,7 +37,6 @@ namespace GTK
         // ─── Constants ─────────────────────────────────────────────────
         private static readonly string[] ChanLbl = { "R", "G", "B", "A" };
         private static readonly float[] DefColor = { 0f, 0f, 0f, 1f };
-
         private static readonly SaveFormat[] FmtVals = { SaveFormat.PNG, SaveFormat.JPG, SaveFormat.TGA };
 
         // ─── Window lifecycle ──────────────────────────────────────────
@@ -97,7 +95,7 @@ namespace GTK
         }
 
         // ═══════════════════════════════════════════════════════════════
-        //  MERGE LAYOUT — 4 columns (R G B A) vertically stacked
+        //  MERGE LAYOUT — manual rects for exact square control
         // ═══════════════════════════════════════════════════════════════
 
         private void DrawMergeLayout()
@@ -105,50 +103,48 @@ namespace GTK
             EditorGUILayout.LabelField("Source Channels", EditorStyles.boldLabel);
             EditorGUILayout.Space(4);
 
-            float colW = (position.width - 44f) / 4f;
+            float colW = (position.width - 64f) / 4f;
             float texSize = Mathf.Min(colW - 6, 80f);
-
-            EditorGUILayout.BeginHorizontal();
+            float spacing = 4f;
+            float rowH = EditorGUIUtility.singleLineHeight;
+            float totalH = rowH + spacing + texSize + spacing + rowH + spacing + rowH + 2;
+            var area = EditorGUILayout.GetControlRect(false, totalH);
+            area = EditorGUI.IndentedRect(area);
 
             for (int i = 0; i < 4; i++)
             {
-                EditorGUILayout.BeginVertical(GUILayout.Width(colW));
+                float x = area.x + i * (colW + spacing);
+                float cy = area.y;
 
                 // Label
-                EditorGUILayout.LabelField(ChanLbl[i], EditorStyles.boldLabel, GUILayout.Width(colW));
+                EditorGUI.LabelField(new Rect(x, cy, colW, rowH), ChanLbl[i], EditorStyles.boldLabel);
+                cy += rowH + spacing;
 
-                // Square texture field
-                var texRect = GUILayoutUtility.GetRect(texSize, texSize);
+                // Square texture field (centered in column)
+                float ox = x + (colW - texSize) * 0.5f;
                 _sources[i].texture = (Texture2D)EditorGUI.ObjectField(
-                    texRect, _sources[i].texture, typeof(Texture2D), false);
+                    new Rect(ox, cy, texSize, texSize), _sources[i].texture, typeof(Texture2D), false);
+                cy += texSize + spacing;
 
                 // Channel popup
                 EditorGUI.BeginDisabledGroup(_sources[i].texture == null);
-                var pr = GUILayoutUtility.GetRect(60f, EditorGUIUtility.singleLineHeight);
-                _sources[i].sourceChannel = EditorGUI.Popup(pr, _sources[i].sourceChannel, ChanLbl, EditorStyles.popup);
+                _sources[i].sourceChannel = EditorGUI.Popup(
+                    new Rect(x, cy, colW, rowH), _sources[i].sourceChannel, ChanLbl, EditorStyles.popup);
                 EditorGUI.EndDisabledGroup();
+                cy += rowH + spacing;
 
-                // Float input (instead of slider)
+                // Float input (replaces slider)
                 EditorGUI.BeginDisabledGroup(_sources[i].texture != null);
-                EditorGUILayout.BeginHorizontal();
-                var plr = GUILayoutUtility.GetRect(8f, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PrefixLabel(plr, new GUIContent(" "));
-                var flr = GUILayoutUtility.GetRect(60f, EditorGUIUtility.singleLineHeight);
-                float v = EditorGUI.FloatField(flr, _sources[i].defaultColor, EditorStyles.numberField);
+                float v = EditorGUI.FloatField(
+                    new Rect(x, cy, colW, rowH), _sources[i].defaultColor, EditorStyles.numberField);
                 if (_sources[i].texture == null)
                     _sources[i].defaultColor = Mathf.Clamp01(v);
-                EditorGUILayout.EndHorizontal();
                 EditorGUI.EndDisabledGroup();
-
-                EditorGUILayout.EndVertical();
-                if (i < 3) GUILayout.Space(4);
             }
-
-            EditorGUILayout.EndHorizontal();
         }
 
         // ═══════════════════════════════════════════════════════════════
-        //  SWIZZLE LAYOUT — source field + 4 columns of ops
+        //  SWIZZLE LAYOUT — source field (square) + 4 columns
         // ═══════════════════════════════════════════════════════════════
 
         private void DrawSwizzleLayout()
@@ -156,11 +152,13 @@ namespace GTK
             EditorGUILayout.LabelField("Source Texture", EditorStyles.boldLabel);
             EditorGUILayout.Space(4);
 
-            // Square texture field
+            // Square source texture field
             float texSize = 80f;
-            var texRect = GUILayoutUtility.GetRect(texSize, texSize);
+            var texArea = EditorGUILayout.GetControlRect(false, texSize + 4);
+            texArea = EditorGUI.IndentedRect(texArea);
             _swizzleSource = (Texture2D)EditorGUI.ObjectField(
-                texRect, _swizzleSource, typeof(Texture2D), false);
+                new Rect(texArea.x, texArea.y, texSize, texSize), _swizzleSource, typeof(Texture2D), false);
+            texArea.y += texSize + 4;
 
             if (_swizzleSource == null)
             {
@@ -172,71 +170,38 @@ namespace GTK
             EditorGUILayout.LabelField("Channel Operations", EditorStyles.boldLabel);
             EditorGUILayout.Space(4);
 
-            float colW = (position.width - 44f) / 4f;
-
-            EditorGUILayout.BeginHorizontal();
+            float colW = (position.width - 64f) / 4f;
+            float spacing = 4f;
+            float rowH = EditorGUIUtility.singleLineHeight;
+            float totalH = rowH + spacing + rowH + spacing + rowH;
+            var cArea = EditorGUILayout.GetControlRect(false, totalH);
+            cArea = EditorGUI.IndentedRect(cArea);
 
             for (int i = 0; i < 4; i++)
             {
-                EditorGUILayout.BeginVertical(GUILayout.Width(colW));
+                float x = cArea.x + i * (colW + spacing);
+                float cy = cArea.y;
 
                 // Label
-                EditorGUILayout.LabelField(ChanLbl[i], EditorStyles.boldLabel, GUILayout.Width(colW));
+                EditorGUI.LabelField(new Rect(x, cy, colW, rowH), ChanLbl[i], EditorStyles.boldLabel);
+                cy += rowH + spacing;
 
                 // SwizzleOp popup
-                var sr = GUILayoutUtility.GetRect(80f, EditorGUIUtility.singleLineHeight);
                 int idx = (int)_swizzleOps[i];
-                idx = EditorGUI.Popup(sr, idx, new[] { "0", "1", "gray", "custom", "R", "G", "B", "A", "inv R", "inv G", "inv B", "inv A" }, EditorStyles.popup);
+                idx = EditorGUI.Popup(new Rect(x, cy, colW, rowH), idx,
+                    new[] { "0", "1", "gray", "custom", "R", "G", "B", "A", "inv R", "inv G", "inv B", "inv A" },
+                    EditorStyles.popup);
                 _swizzleOps[i] = (SwizzleOp)idx;
+                cy += rowH + spacing;
 
-                // Custom float input (only if Custom selected)
+                // Custom float input or placeholder
                 if (_swizzleOps[i] == SwizzleOp.Custom)
                 {
-                    EditorGUILayout.BeginHorizontal();
-                    var cpr = GUILayoutUtility.GetRect(8f, EditorGUIUtility.singleLineHeight);
-                    EditorGUI.PrefixLabel(cpr, new GUIContent(" "));
-                    var cfr = GUILayoutUtility.GetRect(60f, EditorGUIUtility.singleLineHeight);
-                    float cv = EditorGUI.FloatField(cfr, _swizzleCustoms[i], EditorStyles.numberField);
+                    float cv = EditorGUI.FloatField(new Rect(x, cy, colW, rowH),
+                        _swizzleCustoms[i], EditorStyles.numberField);
                     _swizzleCustoms[i] = Mathf.Clamp01(cv);
-                    EditorGUILayout.EndHorizontal();
                 }
-                else
-                {
-                    // Placeholder to keep alignment
-                    GUILayout.Space(EditorGUIUtility.singleLineHeight + 2);
-                }
-
-                EditorGUILayout.EndVertical();
-                if (i < 3) GUILayout.Space(4);
             }
-
-            EditorGUILayout.EndHorizontal();
-
-            // Presets
-            EditorGUILayout.Space(6);
-            EditorGUILayout.LabelField("Presets", EditorStyles.miniBoldLabel);
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Identity", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.SourceA);
-            if (GUILayout.Button("Swap RG", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.SourceG, SwizzleOp.SourceR, SwizzleOp.SourceB, SwizzleOp.SourceA);
-            if (GUILayout.Button("A=0", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.Zero);
-            if (GUILayout.Button("A=1", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.One);
-            if (GUILayout.Button("A=0.5", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.Gray);
-            EditorGUILayout.EndHorizontal();
-        }
-
-        private void ApplySwizzlePreset(SwizzleOp r, SwizzleOp g, SwizzleOp b, SwizzleOp a)
-        {
-            _swizzleOps[0] = r;
-            _swizzleOps[1] = g;
-            _swizzleOps[2] = b;
-            _swizzleOps[3] = a;
-            _previewValid = false;
-            AppendLog($"Applied swizzle preset: {r}/{g}/{b}/{a}");
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -271,7 +236,7 @@ namespace GTK
         }
 
         // ═══════════════════════════════════════════════════════════════
-        //  PREVIEW
+        //  PREVIEW  — centered with info on the right
         // ═══════════════════════════════════════════════════════════════
 
         private void DrawPreviewSection()
@@ -279,15 +244,20 @@ namespace GTK
             EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
             EditorGUILayout.Space(2);
 
-            EditorGUILayout.BeginHorizontal();
+            float previewSize = Mathf.Min(position.width * 0.35f, 200f);
+            float infoW = position.width - previewSize - 80f;
+            float rowH = EditorGUIUtility.singleLineHeight;
+            float sectionH = Mathf.Max(previewSize, rowH * 3 + 30);
 
-            float previewSize = Mathf.Min(position.width * 0.38f, 256f);
-            var previewRect = GUILayoutUtility.GetRect(previewSize, previewSize, GUILayout.ExpandWidth(false));
+            var area = EditorGUILayout.GetControlRect(false, sectionH);
+            area = EditorGUI.IndentedRect(area);
+
+            // Preview on left (centered vertically)
+            float py = area.y + (sectionH - previewSize) * 0.5f;
+            var previewRect = new Rect(area.x, py, previewSize, previewSize);
 
             if (_previewTex != null && _previewValid)
-            {
                 EditorGUI.DrawPreviewTexture(previewRect, _previewTex, null, ScaleMode.ScaleToFit);
-            }
             else
             {
                 EditorGUI.LabelField(previewRect, "(no preview)", EditorStyles.centeredGreyMiniLabel);
@@ -295,28 +265,34 @@ namespace GTK
                     EditorStyles.helpBox.Draw(previewRect, false, false, false, false);
             }
 
-            EditorGUILayout.BeginVertical(GUILayout.Width(position.width - previewSize - 70));
+            // Info on right
+            float ix = previewRect.xMax + 10;
+            float iy = area.y;
+
             if (_previewTex != null && _previewValid)
             {
-                EditorGUILayout.LabelField($"Size: {_previewTex.width} \u00d7 {_previewTex.height}");
-                EditorGUILayout.LabelField($"Format: {_saveFormat}");
+                EditorGUI.LabelField(new Rect(ix, iy, infoW, rowH), $"Size: {_previewTex.width}\u00d7{_previewTex.height}");
+                iy += rowH + 2;
+                EditorGUI.LabelField(new Rect(ix, iy, infoW, rowH), $"Format: {_saveFormat}");
+                iy += rowH + 2;
                 if (_saveFormat == SaveFormat.JPG)
-                    EditorGUILayout.LabelField($"Quality: {_jpgQuality}");
-                GUILayout.FlexibleSpace();
-            }
-            else
-            {
-                GUILayout.FlexibleSpace();
+                {
+                    EditorGUI.LabelField(new Rect(ix, iy, infoW, rowH), $"Quality: {_jpgQuality}");
+                    iy += rowH + 2;
+                }
             }
 
-            if (GUILayout.Button(_previewValid ? "Refresh Preview" : "Generate Preview", GUILayout.Height(24)))
+            // Preview button
+            float btnY = area.y + sectionH - 24f;
+            if (GUI.Button(new Rect(ix, btnY, infoW, 24f),
+                _previewValid ? "Refresh Preview" : "Generate Preview"))
                 GeneratePreview();
 
             if (!_previewValid && _previewTex != null)
-                EditorGUILayout.LabelField("Preview outdated.", EditorStyles.miniLabel);
-
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.EndHorizontal();
+            {
+                btnY -= rowH + 2;
+                EditorGUI.LabelField(new Rect(ix, btnY, infoW, rowH), "Preview outdated.", EditorStyles.miniLabel);
+            }
         }
 
         private void GeneratePreview()
@@ -367,25 +343,14 @@ namespace GTK
         }
 
         // ═══════════════════════════════════════════════════════════════
-        //  SAVE
+        //  SAVE  — no File Name field (dialog handles it)
         // ═══════════════════════════════════════════════════════════════
 
         private void DrawSaveSection()
         {
             EditorGUILayout.LabelField("Save", EditorStyles.boldLabel);
-            EditorGUILayout.Space(2);
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PrefixLabel("File Name");
-            string ext = TextureChannelMergeUtility.GetExtension(_saveFormat);
-            string display = EditorGUILayout.TextField(_fileName + ext);
-            if (display.EndsWith(ext))
-                _fileName = display.Substring(0, display.Length - ext.Length);
-            else
-                _fileName = display;
-            EditorGUILayout.EndHorizontal();
-
             EditorGUILayout.Space(4);
+
             if (GUILayout.Button("Merge && Save", GUILayout.Height(30)))
                 ExecuteSave();
         }
@@ -401,9 +366,8 @@ namespace GTK
 
             string ext = TextureChannelMergeUtility.GetExtension(_saveFormat);
             string savePath = EditorUtility.SaveFilePanel(
-                "Save Merged Texture",
-                "Assets",
-                _fileName + ext,
+                "Save Merged Texture", "Assets",
+                "MergedTexture" + ext,
                 _saveFormat.ToString().ToLowerInvariant());
 
             if (string.IsNullOrEmpty(savePath))
