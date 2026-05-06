@@ -4,55 +4,71 @@ using System.IO;
 
 namespace GTK
 {
-    /// <summary>
-    /// Configuration for one output channel (R/G/B/A).
-    /// </summary>
+    public enum SaveFormat
+    {
+        PNG,
+        JPG,
+        TGA
+    }
+
     [System.Serializable]
     public struct ChannelSource
     {
         public Texture2D texture;
         /// <summary>0=R, 1=G, 2=B, 3=A</summary>
         public int sourceChannel;
-        /// <summary>Default value used when texture is null.</summary>
+        /// <summary>Used when texture is null.</summary>
         public float defaultColor;
     }
 
+    /// <summary>
+    /// Core logic for texture channel merging and swizzling.
+    /// Pipeline-agnostic — only uses UnityEngine core APIs.
+    /// </summary>
     public static class TextureChannelMergeUtility
     {
-        /// <summary>
-        /// Merge up to 4 source channels into a single Texture2D,
-        /// then encode and write to disk as PNG.
-        /// </summary>
-        /// <param name="sources">Array of 4 ChannelSource (index = output channel).</param>
-        /// <param name="processInLinear">
-        /// If true: convert sRGB inputs to linear, output linear→gamma for PNG.
-        /// </param>
-        /// <param name="savePath">Full file path to write .png (must end in .png).</param>
-        public static void MergeAndSave(ChannelSource[] sources, bool processInLinear, string savePath)
+        // ─── Public API ────────────────────────────────────────────────
+
+        public static bool IsProjectLinear()
+        {
+            return PlayerSettings.colorSpace == ColorSpace.Linear;
+        }
+
+        /// <summary>Save an arbitrary Texture2D to disk with chosen format.</summary>
+        public static void SaveTexture(Texture2D tex, string savePath, SaveFormat format, int jpgQuality)
+        {
+            byte[] data = Encode(tex, format, jpgQuality);
+            string dir = Path.GetDirectoryName(savePath);
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+            File.WriteAllBytes(savePath, data);
+            AssetDatabase.Refresh();
+        }
+
+        /// <summary>Merge multiple sources, encode, and save to disk.</summary>
+        public static void MergeAndSave(ChannelSource[] sources, bool processInLinear,
+            string savePath, SaveFormat format, int jpgQuality)
+        {
+            var preview = MergePreview(sources, processInLinear);
+            try
+            {
+                SaveTexture(preview, savePath, format, jpgQuality);
+            }
+            finally
+            {
+                Object.DestroyImmediate(preview);
+            }
+        }
+
+        /// <summary>Merge sources into a temporary Texture2D (for preview or save).</summary>
+        public static Texture2D MergePreview(ChannelSource[] sources, bool processInLinear)
         {
             int outWidth, outHeight;
             var srcPixels = PrepareSources(sources, out outWidth, out outHeight);
 
-            // Build output pixel buffer
             var outPixels = new Color[outWidth * outHeight];
             bool projectIsLinear = IsProjectLinear();
-            bool[] isSRGB = new bool[4];
-
-            for (int c = 0; c < 4; c++)
-            {
-                Texture2D tex = sources[c].texture;
-                if (tex != null)
-                {
-                    string path = AssetDatabase.GetAssetPath(tex);
-                    var importer = AssetImporter.GetAtPath(path) as TextureImporter;
-                    isSRGB[c] = importer != null && importer.sRGBTexture;
-                }
-                else
-                {
-                    isSRGB[c] = false;
-                }
-            }
-
+            bool[] isSRGB = GetSRGBFlags(sources);
             bool needLinearConversion = processInLinear && projectIsLinear;
 
             for (int y = 0; y < outHeight; y++)
@@ -61,40 +77,84 @@ namespace GTK
                 {
                     int idx = y * outWidth + x;
                     var pixel = new Color(
-                        GetChannelValue(sources, srcPixels, 0, x, y, outWidth, outHeight,
-                            needLinearConversion, isSRGB[0]),
-                        GetChannelValue(sources, srcPixels, 1, x, y, outWidth, outHeight,
-                            needLinearConversion, isSRGB[1]),
-                        GetChannelValue(sources, srcPixels, 2, x, y, outWidth, outHeight,
-                            needLinearConversion, isSRGB[2]),
-                        GetChannelValue(sources, srcPixels, 3, x, y, outWidth, outHeight,
-                            needLinearConversion, isSRGB[3])
+                        GetChannelValue(sources, srcPixels, 0, x, y, outWidth, outHeight, needLinearConversion, isSRGB[0]),
+                        GetChannelValue(sources, srcPixels, 1, x, y, outWidth, outHeight, needLinearConversion, isSRGB[1]),
+                        GetChannelValue(sources, srcPixels, 2, x, y, outWidth, outHeight, needLinearConversion, isSRGB[2]),
+                        GetChannelValue(sources, srcPixels, 3, x, y, outWidth, outHeight, needLinearConversion, isSRGB[3])
                     );
 
-                    // If processing linear, convert output back to gamma for PNG
+                    // If linear processing, convert output back to gamma for display/save
                     outPixels[idx] = processInLinear ? pixel.gamma : pixel;
                 }
             }
 
-            // Write to texture and save
-            var outputTex = new Texture2D(outWidth, outHeight, TextureFormat.RGBA32, false, false);
-            outputTex.SetPixels(outPixels);
-            byte[] pngData = outputTex.EncodeToPNG();
-            Object.DestroyImmediate(outputTex);
-
-            string dir = Path.GetDirectoryName(savePath);
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            File.WriteAllBytes(savePath, pngData);
-            AssetDatabase.Refresh();
+            var output = new Texture2D(outWidth, outHeight, TextureFormat.RGBA32, false, false);
+            output.SetPixels(outPixels);
+            output.Apply();
+            return output;
         }
 
-        /// <summary>
-        /// Load source textures respecting Read/Write enabled state.
-        /// If Read/Write is disabled, create a readable copy via temporary render-texture blit.
-        /// Returns the pixel data and sets outWidth/outHeight to the smallest dimensions.
-        /// </summary>
+        /// <summary>Swizzle channels of a single texture (rearrange R/G/B/A).</summary>
+        /// <param name="channelMap">Length-4 array: for each output channel (R,G,B,A), which source channel index.</param>
+        public static Texture2D SwizzleChannels(Texture2D source, int[] channelMap, bool processInLinear)
+        {
+            var readable = EnsureReadable(source);
+            var pixels = readable.GetPixels();
+
+            bool projectIsLinear = IsProjectLinear();
+            bool isSRGB = IsSRGB(source);
+            bool needLinearConversion = processInLinear && projectIsLinear;
+
+            var outPixels = new Color[pixels.Length];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                var p = pixels[i];
+                outPixels[i] = new Color(
+                    GetMappedValue(p, channelMap[0], needLinearConversion, isSRGB),
+                    GetMappedValue(p, channelMap[1], needLinearConversion, isSRGB),
+                    GetMappedValue(p, channelMap[2], needLinearConversion, isSRGB),
+                    GetMappedValue(p, channelMap[3], needLinearConversion, isSRGB)
+                );
+                if (processInLinear)
+                    outPixels[i] = outPixels[i].gamma;
+            }
+
+            if (readable != source)
+                Object.DestroyImmediate(readable);
+
+            var output = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false, false);
+            output.SetPixels(outPixels);
+            output.Apply();
+            return output;
+        }
+
+        /// <summary>Get file extension for a format (includes leading dot, lowercase).</summary>
+        public static string GetExtension(SaveFormat format)
+        {
+            switch (format)
+            {
+                case SaveFormat.PNG: return ".png";
+                case SaveFormat.JPG: return ".jpg";
+                case SaveFormat.TGA: return ".tga";
+                default: return ".png";
+            }
+        }
+
+        // ─── Encoding ──────────────────────────────────────────────────
+
+        private static byte[] Encode(Texture2D tex, SaveFormat format, int jpgQuality)
+        {
+            switch (format)
+            {
+                case SaveFormat.PNG: return tex.EncodeToPNG();
+                case SaveFormat.JPG: return tex.EncodeToJPG(jpgQuality);
+                case SaveFormat.TGA: return tex.EncodeToTGA();
+                default: return tex.EncodeToPNG();
+            }
+        }
+
+        // ─── Pixel Preparation ─────────────────────────────────────────
+
         private static Color[][] PrepareSources(ChannelSource[] sources, out int outWidth, out int outHeight)
         {
             int w = int.MaxValue, h = int.MaxValue;
@@ -109,10 +169,8 @@ namespace GTK
                     continue;
                 }
 
-                // Ensure readable
                 var readable = EnsureReadable(tex);
                 srcPixels[c] = readable.GetPixels();
-
                 if (readable != tex)
                     Object.DestroyImmediate(readable);
 
@@ -123,6 +181,17 @@ namespace GTK
             outWidth = w == int.MaxValue ? 1 : w;
             outHeight = h == int.MaxValue ? 1 : h;
             return srcPixels;
+        }
+
+        private static bool[] GetSRGBFlags(ChannelSource[] sources)
+        {
+            var flags = new bool[4];
+            for (int c = 0; c < 4; c++)
+            {
+                var tex = sources[c].texture;
+                flags[c] = tex != null && IsSRGB(tex);
+            }
+            return flags;
         }
 
         private static float GetChannelValue(
@@ -138,32 +207,39 @@ namespace GTK
             int texW = src.texture.width;
             int texH = src.texture.height;
 
-            // Nearest-neighbour downscale if source is larger than output
             int sx = (int)((float)x / outWidth * texW);
             int sy = (int)((float)y / outHeight * texH);
             sx = Mathf.Clamp(sx, 0, texW - 1);
             sy = Mathf.Clamp(sy, 0, texH - 1);
 
-            int srcIdx = sy * texW + sx;
-            float val = srcPixels[channel][srcIdx][src.sourceChannel];
+            float val = srcPixels[channel][sy * texW + sx][src.sourceChannel];
 
-            // If processing in linear and texture is sRGB, convert gamma→linear
             if (needLinearConversion && isSRGB)
                 val = Mathf.GammaToLinearSpace(val);
 
             return val;
         }
 
-        /// <summary>
-        /// Create a readable copy of a texture if it doesn't have Read/Write enabled.
-        /// </summary>
+        private static float GetMappedValue(Color pixel, int sourceChannel, bool needLinearConversion, bool isSRGB)
+        {
+            float val = pixel[sourceChannel];
+            if (needLinearConversion && isSRGB)
+                val = Mathf.GammaToLinearSpace(val);
+            return val;
+        }
+
+        // ─── Texture Readability ───────────────────────────────────────
+
         private static Texture2D EnsureReadable(Texture2D tex)
         {
             if (tex.isReadable)
                 return tex;
 
-            // Blit to readable RenderTexture, then read back
-            var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.Default, RenderTextureReadWrite.sRGB);
+            var rt = RenderTexture.GetTemporary(
+                tex.width, tex.height, 0,
+                RenderTextureFormat.Default,
+                RenderTextureReadWrite.sRGB);
+
             Graphics.Blit(tex, rt);
 
             var prev = RenderTexture.active;
@@ -175,13 +251,16 @@ namespace GTK
 
             RenderTexture.active = prev;
             RenderTexture.ReleaseTemporary(rt);
-
             return copy;
         }
 
-        public static bool IsProjectLinear()
+        private static bool IsSRGB(Texture2D tex)
         {
-            return PlayerSettings.colorSpace == ColorSpace.Linear;
+            string path = AssetDatabase.GetAssetPath(tex);
+            if (string.IsNullOrEmpty(path))
+                return true; // assume sRGB for procedural textures
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            return importer == null || importer.sRGBTexture;
         }
     }
 }
