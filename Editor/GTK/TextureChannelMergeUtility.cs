@@ -80,7 +80,7 @@ namespace GTK
             var outputTex = new Texture2D(outWidth, outHeight, TextureFormat.RGBA32, false, false);
             outputTex.SetPixels(outPixels);
             byte[] pngData = outputTex.EncodeToPNG();
-            DestroyImmediate(outputTex);
+            Object.DestroyImmediate(outputTex);
 
             string dir = Path.GetDirectoryName(savePath);
             if (!Directory.Exists(dir))
@@ -114,7 +114,7 @@ namespace GTK
                 srcPixels[c] = readable.GetPixels();
 
                 if (readable != tex)
-                    DestroyImmediate(readable);
+                    Object.DestroyImmediate(readable);
 
                 w = Mathf.Min(w, tex.width);
                 h = Mathf.Min(h, tex.height);
