@@ -1,0 +1,36 @@
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+
+# Visual Studio
+*.csproj
+*.sln
+*.sln.ide/
+*.user
+*.suo
+*.userosscache
+*.userprefs
+
+# Rider
+/.idea/
+*.sln.iml
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# JetBrains
+*.DotSettings
+
+# VSCode
+.vscode/
+
+# Git LFS
+*.zip filter=lfs diff=lfs merge=lfs -text
