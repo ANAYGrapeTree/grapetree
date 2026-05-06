@@ -1,0 +1,12 @@
+{
+  "name": "GTK.Editor",
+  "rootNamespace": "GTK",
+  "references": [],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": []
+}
