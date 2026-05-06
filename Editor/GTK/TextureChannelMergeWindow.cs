@@ -18,7 +18,7 @@ namespace GTK
 
         // ─── Swizzle state ─────────────────────────────────────────────
         [SerializeField] private Texture2D _swizzleSource;
-        [SerializeField] private SwizzleOp[] _swizzleOps = { SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.RGBA };
+        [SerializeField] private SwizzleOp[] _swizzleOps = { SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.SourceA };
         [SerializeField] private float[] _swizzleCustoms = { 0f, 0f, 0f, 0f };
 
         // ─── Save state ────────────────────────────────────────────────
@@ -38,18 +38,8 @@ namespace GTK
         // ─── Constants ─────────────────────────────────────────────────
         private static readonly string[] ChanLbl = { "R", "G", "B", "A" };
         private static readonly float[] DefColor = { 0f, 0f, 0f, 1f };
-        private enum ChanIdx { R, G, B, A }
 
         private static readonly SaveFormat[] FmtVals = { SaveFormat.PNG, SaveFormat.JPG, SaveFormat.TGA };
-        private static readonly string[] FmtLabels = { "PNG", "JPG", "TGA" };
-
-        private static readonly SwizzleOp[] SwizzleOpVals =
-        {
-            SwizzleOp.Zero, SwizzleOp.One, SwizzleOp.Gray,
-            SwizzleOp.Custom, SwizzleOp.RGBA, SwizzleOp.ReverseRGBA
-        };
-        private static readonly string[] SwizzleLabels =
-            { "0", "1", "gray", "custom", "RGBA", "reverse RGBA" };
 
         // ─── Window lifecycle ──────────────────────────────────────────
 
@@ -128,21 +118,23 @@ namespace GTK
                 EditorGUILayout.LabelField(ChanLbl[i], EditorStyles.boldLabel, GUILayout.Width(colW));
 
                 // Square texture field
-                var texRect = EditorGUILayout.GetControlRect(false, texSize, GUILayout.Width(texSize));
+                var texRect = GUILayoutUtility.GetRect(texSize, texSize);
                 _sources[i].texture = (Texture2D)EditorGUI.ObjectField(
                     texRect, _sources[i].texture, typeof(Texture2D), false);
 
                 // Channel popup
                 EditorGUI.BeginDisabledGroup(_sources[i].texture == null);
-                _sources[i].sourceChannel = EditorGUILayout.IntPopup(" ", _sources[i].sourceChannel,
-                    new[] { "R", "G", "B", "A" }, new[] { 0, 1, 2, 3 });
+                var pr = GUILayoutUtility.GetRect(60f, EditorGUIUtility.singleLineHeight);
+                _sources[i].sourceChannel = EditorGUI.Popup(pr, _sources[i].sourceChannel, ChanLbl, EditorStyles.popup);
                 EditorGUI.EndDisabledGroup();
 
                 // Float input (instead of slider)
                 EditorGUI.BeginDisabledGroup(_sources[i].texture != null);
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PrefixLabel(" ", GUILayout.Width(8));
-                float v = EditorGUILayout.FloatField(_sources[i].defaultColor, GUILayout.Width(colW - 12));
+                var plr = GUILayoutUtility.GetRect(8f, EditorGUIUtility.singleLineHeight);
+                EditorGUI.PrefixLabel(plr, new GUIContent(" "));
+                var flr = GUILayoutUtility.GetRect(60f, EditorGUIUtility.singleLineHeight);
+                float v = EditorGUI.FloatField(flr, _sources[i].defaultColor, EditorStyles.numberField);
                 if (_sources[i].texture == null)
                     _sources[i].defaultColor = Mathf.Clamp01(v);
                 EditorGUILayout.EndHorizontal();
@@ -166,7 +158,7 @@ namespace GTK
 
             // Square texture field
             float texSize = 80f;
-            var texRect = EditorGUILayout.GetControlRect(false, texSize, GUILayout.Width(texSize));
+            var texRect = GUILayoutUtility.GetRect(texSize, texSize);
             _swizzleSource = (Texture2D)EditorGUI.ObjectField(
                 texRect, _swizzleSource, typeof(Texture2D), false);
 
@@ -192,16 +184,19 @@ namespace GTK
                 EditorGUILayout.LabelField(ChanLbl[i], EditorStyles.boldLabel, GUILayout.Width(colW));
 
                 // SwizzleOp popup
-                int si = (int)_swizzleOps[i];
-                si = EditorGUILayout.IntPopup(" ", si, SwizzleLabels, new[] { 0, 1, 2, 3, 4, 5 });
-                _swizzleOps[i] = (SwizzleOp)si;
+                var sr = GUILayoutUtility.GetRect(80f, EditorGUIUtility.singleLineHeight);
+                int idx = (int)_swizzleOps[i];
+                idx = EditorGUI.Popup(sr, idx, new[] { "0", "1", "gray", "custom", "R", "G", "B", "A", "inv R", "inv G", "inv B", "inv A" }, EditorStyles.popup);
+                _swizzleOps[i] = (SwizzleOp)idx;
 
                 // Custom float input (only if Custom selected)
                 if (_swizzleOps[i] == SwizzleOp.Custom)
                 {
                     EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.PrefixLabel(" ", GUILayout.Width(8));
-                    float cv = EditorGUILayout.FloatField(_swizzleCustoms[i], GUILayout.Width(colW - 12));
+                    var cpr = GUILayoutUtility.GetRect(8f, EditorGUIUtility.singleLineHeight);
+                    EditorGUI.PrefixLabel(cpr, new GUIContent(" "));
+                    var cfr = GUILayoutUtility.GetRect(60f, EditorGUIUtility.singleLineHeight);
+                    float cv = EditorGUI.FloatField(cfr, _swizzleCustoms[i], EditorStyles.numberField);
                     _swizzleCustoms[i] = Mathf.Clamp01(cv);
                     EditorGUILayout.EndHorizontal();
                 }
@@ -222,15 +217,15 @@ namespace GTK
             EditorGUILayout.LabelField("Presets", EditorStyles.miniBoldLabel);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Identity", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.RGBA);
-            if (GUILayout.Button("Reverse", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.ReverseRGBA, SwizzleOp.ReverseRGBA, SwizzleOp.ReverseRGBA, SwizzleOp.ReverseRGBA);
-            if (GUILayout.Button("Clear Alpha", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.Zero);
-            if (GUILayout.Button("Alpha→1", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.RGBA, SwizzleOp.One);
-            if (GUILayout.Button("Grayscale", EditorStyles.miniButton))
-                ApplySwizzlePreset(SwizzleOp.Gray, SwizzleOp.Gray, SwizzleOp.Gray, SwizzleOp.Gray);
+                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.SourceA);
+            if (GUILayout.Button("Swap RG", EditorStyles.miniButton))
+                ApplySwizzlePreset(SwizzleOp.SourceG, SwizzleOp.SourceR, SwizzleOp.SourceB, SwizzleOp.SourceA);
+            if (GUILayout.Button("A=0", EditorStyles.miniButton))
+                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.Zero);
+            if (GUILayout.Button("A=1", EditorStyles.miniButton))
+                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.One);
+            if (GUILayout.Button("A=0.5", EditorStyles.miniButton))
+                ApplySwizzlePreset(SwizzleOp.SourceR, SwizzleOp.SourceG, SwizzleOp.SourceB, SwizzleOp.Gray);
             EditorGUILayout.EndHorizontal();
         }
 
@@ -260,16 +255,17 @@ namespace GTK
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.PrefixLabel("Format");
-            int fmtIdx = System.Array.IndexOf(FmtVals, _saveFormat);
-            if (fmtIdx < 0) fmtIdx = 0;
-            fmtIdx = EditorGUILayout.Popup(fmtIdx, FmtLabels, GUILayout.Width(80));
-            _saveFormat = FmtVals[fmtIdx];
+            var fmtR = GUILayoutUtility.GetRect(80f, EditorGUIUtility.singleLineHeight);
+            int fi = System.Array.IndexOf(FmtVals, _saveFormat);
+            fi = EditorGUI.Popup(fmtR, fi, new[] { "PNG", "JPG", "TGA" }, EditorStyles.popup);
+            if (fi >= 0) _saveFormat = FmtVals[fi];
 
             if (_saveFormat == SaveFormat.JPG)
             {
                 EditorGUILayout.Space(8);
                 EditorGUILayout.PrefixLabel("Quality");
-                _jpgQuality = EditorGUILayout.IntSlider(_jpgQuality, 1, 100, GUILayout.Width(160));
+                var jsr = GUILayoutUtility.GetRect(160f, EditorGUIUtility.singleLineHeight);
+                _jpgQuality = EditorGUI.IntSlider(jsr, _jpgQuality, 1, 100);
             }
             EditorGUILayout.EndHorizontal();
         }

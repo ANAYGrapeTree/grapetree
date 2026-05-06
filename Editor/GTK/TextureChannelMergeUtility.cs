@@ -26,12 +26,18 @@ namespace GTK
     /// </summary>
     public enum SwizzleOp
     {
-        Zero,        // constant 0.0
-        One,         // constant 1.0
-        Gray,        // pixel luminance
-        Custom,      // user-provided float
-        RGBA,        // identity: output[i] = source[i]
-        ReverseRGBA  // reversed: output[i] = source[3-i]
+        Zero,       // constant 0.0
+        One,        // constant 1.0
+        Gray,       // constant 0.5
+        Custom,     // user-provided float
+        SourceR,    // source.R
+        SourceG,    // source.G
+        SourceB,    // source.B
+        SourceA,    // source.A
+        InverseR,   // 1.0 - source.R
+        InverseG,   // 1.0 - source.G
+        InverseB,   // 1.0 - source.B
+        InverseA    // 1.0 - source.A
     }
 
     /// <summary>
@@ -149,15 +155,21 @@ namespace GTK
             float val;
             switch (op)
             {
-                case SwizzleOp.Zero:       val = 0f; break;
-                case SwizzleOp.One:        val = 1f; break;
-                case SwizzleOp.Gray:       val = pixel.grayscale; break;
-                case SwizzleOp.Custom:     val = customVal; break;
-                case SwizzleOp.RGBA:       val = pixel[outputChannelIndex]; break;
-                case SwizzleOp.ReverseRGBA:val = pixel[3 - outputChannelIndex]; break;
-                default:                   val = 0f; break;
+                case SwizzleOp.Zero:     val = 0f; break;
+                case SwizzleOp.One:      val = 1f; break;
+                case SwizzleOp.Gray:     val = 0.5f; break;
+                case SwizzleOp.Custom:   val = customVal; break;
+                case SwizzleOp.SourceR:  val = pixel.r; break;
+                case SwizzleOp.SourceG:  val = pixel.g; break;
+                case SwizzleOp.SourceB:  val = pixel.b; break;
+                case SwizzleOp.SourceA:  val = pixel.a; break;
+                case SwizzleOp.InverseR: val = 1f - pixel.r; break;
+                case SwizzleOp.InverseG: val = 1f - pixel.g; break;
+                case SwizzleOp.InverseB: val = 1f - pixel.b; break;
+                case SwizzleOp.InverseA: val = 1f - pixel.a; break;
+                default:                 val = 0f; break;
             }
-            if (needLinearConversion && isSRGB && op != SwizzleOp.Zero && op != SwizzleOp.One)
+            if (needLinearConversion && isSRGB && op >= SwizzleOp.SourceR)
                 val = Mathf.GammaToLinearSpace(val);
             return val;
         }
