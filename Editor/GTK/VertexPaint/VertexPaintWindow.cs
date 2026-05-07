@@ -436,25 +436,36 @@ namespace GTK.VertexPaint
         // ─── Save to Original ───────────────────────────────────────────
         private void SaveToOriginalMesh()
         {
-            Mesh src = _workingMesh ?? _sourceMesh;
-            if (src == null)
-            {
-                Log("Nothing to save — no mesh found.");
-                return;
-            }
-
             if (_sourceMesh == null)
             {
                 Log("No original mesh reference.");
                 return;
             }
 
+            Mesh src = _workingMesh ?? _sourceMesh;
+
             _sourceMesh.colors = src.colors;
             _sourceMesh.UploadMeshData(false);
             EditorUtility.SetDirty(_sourceMesh);
             AssetDatabase.SaveAssets();
 
+            // Tear down working mesh — user can recreate via Start Paint
+            if (_workingMesh != null)
+            {
+                if (_lastTarget.TryGetComponent<MeshFilter>(out MeshFilter mf))
+                    mf.sharedMesh = _sourceMesh;
+                else if (_lastTarget.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
+                    smr.sharedMesh = _sourceMesh;
+
+                Object.DestroyImmediate(_workingMesh);
+                _workingMesh = null;
+            }
+
+            _isEditing = false;
             _hasUnsavedChanges = false;
+            _workingUID = null;
+            _adjacency = null;
+            _status = "Saved to original.";
             Log($"Vertex colors written to {_sourceMesh.name}.");
         }
 
