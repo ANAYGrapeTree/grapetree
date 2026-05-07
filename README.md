@@ -1,53 +1,48 @@
 # 🍇 Grapetree Toolkit (GTK)
 
-> Unity Editor tools for Technical Artists — modular, lightweight, pipeline-friendly.
+> Unity Editor tools for Technical Artists — modular, lightweight, pipeline-agnostic.
 
-**GTK** (short for Grapetree Toolkit) is an open-source collection of Unity Editor utilities built for Technical Artists who work in real-time rendering pipelines. Each tool lives in its own namespace under `GTK` and targets a specific pain point in the asset preparation workflow.
+GTK is an open-source collection of Unity Editor utilities built for Technical Artists.
+Each tool lives under `Tools > GTK` and targets a specific pain point in asset preparation and scene workflow.
 
 ---
 
-## ✨ Features
+## ✨ Tools
 
-| Tool | Status | Description |
-|------|--------|-------------|
-| **Texture Channel Merge** | ✅ Planned | Merge multiple source textures into a single texture's RGBA channels. |
-| *(more coming)* | 📋 | Mesh tools, material batching, pipeline validation, etc. |
+| Tool | Menu Path | Description |
+|------|-----------|-------------|
+| **Texture Channel Merge** | `Tools > GTK > Texture Channel Merge` | Merge/swizzle textures — remap RGBA channels from multiple sources into one output. Formats: PNG/JPG/TGA. |
+| **Vertex Paint** | `Tools > GTK > Vertex Paint` | Scene-view vertex color brush. Paint on a mesh copy, export as new asset or write back to original. Channels: RGBA/R/G/B/A/Smooth. |
 
 ---
 
 ## 📦 Installation
 
-### Via Unity Package Manager (UPM)
+### Via UPM git URL
 
-1. Open Unity → **Window** → **Package Manager**
-2. Click **+** → **Add package from git URL**
-3. Paste:
-
-   ```
-   https://github.com/ANAYGrapeTree/grapetree.git
-   ```
-
-### Or clone manually
-
-```bash
-git clone https://github.com/ANAYGrapeTree/grapetree.git
+```
+Window → Package Manager → + → Add package from git URL
 ```
 
-Then copy the `com.grapetree.gtk` folder into your project's `Packages/` directory.
+```
+https://github.com/ANAYGrapeTree/grapetree.git
+```
 
----
+### Local development
 
-## 🛠 Tools
+```bash
+git clone git@github.com:ANAYGrapeTree/grapetree.git  Packages/com.grapetree.gtk
+```
 
-### Texture Channel Merge
+Or add a `file:` reference in `Packages/manifest.json`:
 
-**Menu:** `Tools > GTK > Texture Channel Merge`
-
-Select up to 4 source textures and assign each to a target channel (R, G, B, A) of the output texture. Supports:
-
-- Source → target channel remapping (e.g., TextureA.R → Output.G)
-- Single-channel grayscale or multi-channel sources
-- PNG / EXR export to project Assets
+```json
+{
+  "dependencies": {
+    "com.grapetree.gtk": "file:../grapetree"
+  }
+}
+```
 
 ---
 
@@ -55,14 +50,19 @@ Select up to 4 source textures and assign each to a target channel (R, G, B, A) 
 
 ```
 com.grapetree.gtk/
-├── Editor/              # Editor-only scripts and windows
-│   └── GTK/             # Tool implementations
-│       ├── TextureChannelMergeWindow.cs
-│       └── TextureChannelMergeUtility.cs
-├── Runtime/             # Runtime components (if any)
-│   └── GTK/
-├── Documentation/       # Docs and usage guides
-├── package.json         # UPM package manifest
+├── Editor/GTK/
+│   ├── GTK.Editor.asmdef
+│   ├── TextureChannelMerge/
+│   │   ├── TextureChannelMergeWindow.cs
+│   │   └── TextureChannelMergeUtility.cs
+│   └── VertexPaint/
+│       ├── VertexPaintWindow.cs
+│       └── VertexPaintUtility.cs
+├── Shaders/
+│   └── VertexColorPreview.shader
+├── Documentation/
+│   └── README.md
+├── package.json
 └── README.md
 ```
 
@@ -71,7 +71,7 @@ com.grapetree.gtk/
 ## 🧵 Requirements
 
 - **Unity 2022.3** or newer
-- **团结引擎 (Tuanjie)** 2022.3+ also compatible
+- **Tuanjie Engine** 2022.3+ compatible
 - Works with Built-in, URP, and HDRP
 
 ---
@@ -79,7 +79,3 @@ com.grapetree.gtk/
 ## 📄 License
 
 MIT © [ANAYGrapeTree](https://github.com/ANAYGrapeTree)
-
----
-
-*Made for Technical Artists, by a Technical Artist.*
