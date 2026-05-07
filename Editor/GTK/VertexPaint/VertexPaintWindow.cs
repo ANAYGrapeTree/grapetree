@@ -61,6 +61,7 @@ namespace GTK.VertexPaint
 
         // ─── Selection ──────────────────────────────────────────────────
         private GameObject _lastTarget;
+        [SerializeField] private string _sourceMeshPath;
         private string _status = "Ready.";
 
         // ─── Log ────────────────────────────────────────────────────────
@@ -76,13 +77,36 @@ namespace GTK.VertexPaint
         private void OnEnable()
         {
             SceneView.duringSceneGui += OnSceneGUI;
+
+            // Restore source mesh reference after domain reload
+            if (!string.IsNullOrEmpty(_sourceMeshPath))
+                _sourceMesh = AssetDatabase.LoadAssetAtPath<Mesh>(_sourceMeshPath);
+
+            // If selected object has an orphaned working mesh (from domain reload), restore source
+            var go = Selection.activeGameObject;
+            if (go != null && _sourceMesh != null)
+            {
+                Mesh cur = go.TryGetComponent<MeshFilter>(out MeshFilter mf)
+                    ? mf.sharedMesh
+                    : go.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr)
+                        ? smr.sharedMesh : null;
+
+                if (cur != null && cur.name.Contains("_paint_"))
+                {
+                    if (go.TryGetComponent<MeshFilter>(out mf))
+                        mf.sharedMesh = _sourceMesh;
+                    else if (go.TryGetComponent<SkinnedMeshRenderer>(out smr))
+                        smr.sharedMesh = _sourceMesh;
+                }
+            }
+
             Log("Vertex Paint ready.");
         }
 
         private void OnDisable()
         {
             SceneView.duringSceneGui -= OnSceneGUI;
-            DiscardWorkingMesh();
+            // Working mesh stays on GameObject — do NOT discard on close
             DisablePreview();
         }
 
@@ -257,6 +281,9 @@ namespace GTK.VertexPaint
             else if (go.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
                 _sourceMesh = smr.sharedMesh;
 
+            _sourceMeshPath = _sourceMesh != null
+                ? AssetDatabase.GetAssetPath(_sourceMesh) : null;
+
             _isEditing = false;
             _isPreview = false;
             _adjacency = null;
@@ -361,7 +388,7 @@ namespace GTK.VertexPaint
         // ─── Save / Export ──────────────────────────────────────────────
         private void ExportWorkingMesh()
         {
-            if (_workingMesh == null) return;
+            if (_workingMesh == null || _lastTarget == null) return;
 
             string defaultName = _workingUID != null
                 ? $"painted_{_workingUID}.asset"
@@ -379,14 +406,31 @@ namespace GTK.VertexPaint
                 return;
             }
 
-            // Use a copy since AssetDatabase.CreateAsset takes ownership
+            // Create the mesh asset
             var export = Object.Instantiate(_workingMesh);
             export.name = System.IO.Path.GetFileNameWithoutExtension(savePath);
             AssetDatabase.CreateAsset(export, savePath);
             AssetDatabase.SaveAssets();
 
+            // Update renderer to point to the saved asset
+            if (_lastTarget.TryGetComponent<MeshFilter>(out MeshFilter mf))
+                mf.sharedMesh = export;
+            else if (_lastTarget.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
+                smr.sharedMesh = export;
+
+            // Destroy the working copy — the saved asset is now in use
+            Object.DestroyImmediate(_workingMesh);
+            _workingMesh = null;
             _hasUnsavedChanges = false;
-            Log($"Mesh saved  {savePath}");
+            _workingUID = null;
+            _sourceMesh = export;
+            _sourceMeshPath = savePath;
+
+            // Reset smooth cache
+            _adjacency = null;
+            _smoothBuffer = _sourceMesh != null ? new Color[_sourceMesh.vertexCount] : null;
+
+            Log($"Saved and applied  {savePath}");
         }
 
         // ─── Flood ──────────────────────────────────────────────────────
