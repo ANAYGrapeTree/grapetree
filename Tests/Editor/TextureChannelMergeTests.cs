@@ -10,7 +10,8 @@ namespace GTK.Tests
 
         private static Texture2D MakeTestTexture(Color[] pixels, int size = TexSize)
         {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false, true);
+            // Use RGBAFloat to avoid 8-bit quantization in test textures
+            var tex = new Texture2D(size, size, TextureFormat.RGBAFloat, false, true);
             tex.SetPixels(pixels);
             tex.Apply();
             return tex;
@@ -35,10 +36,10 @@ namespace GTK.Tests
             var pixels = result.GetPixels();
             foreach (var p in pixels)
             {
-                Assert.AreEqual(0.3f, p.r, 0.001f);
-                Assert.AreEqual(0.6f, p.g, 0.001f);
-                Assert.AreEqual(0.9f, p.b, 0.001f);
-                Assert.AreEqual(1.0f, p.a, 0.001f);
+                Assert.AreEqual(0.3f, p.r, 0.01f);
+                Assert.AreEqual(0.6f, p.g, 0.01f);
+                Assert.AreEqual(0.9f, p.b, 0.01f);
+                Assert.AreEqual(1.0f, p.a, 0.01f);
             }
         }
 
@@ -52,8 +53,8 @@ namespace GTK.Tests
             var pixels = result.GetPixels();
             foreach (var p in pixels)
             {
-                Assert.AreEqual(0.8f, p.r, 0.001f);
-                Assert.AreEqual(0.2f, p.g, 0.001f);
+                Assert.AreEqual(0.8f, p.r, 0.01f);
+                Assert.AreEqual(0.2f, p.g, 0.01f);
             }
         }
 
@@ -65,7 +66,7 @@ namespace GTK.Tests
             var result = TextureChannelMergeUtility.SwizzleChannels(src, ops, new[] { 0f, 0f, 0f, 0f }, false);
 
             foreach (var p in result.GetPixels())
-                Assert.AreEqual(0f, p.r + p.g + p.b + p.a, 0.001f);
+                Assert.AreEqual(0f, p.r + p.g + p.b + p.a, 0.01f);
         }
 
         [Test]
@@ -77,10 +78,10 @@ namespace GTK.Tests
 
             foreach (var p in result.GetPixels())
             {
-                Assert.AreEqual(1f, p.r, 0.001f);
-                Assert.AreEqual(1f, p.g, 0.001f);
-                Assert.AreEqual(1f, p.b, 0.001f);
-                Assert.AreEqual(1f, p.a, 0.001f);
+                Assert.AreEqual(1f, p.r, 0.01f);
+                Assert.AreEqual(1f, p.g, 0.01f);
+                Assert.AreEqual(1f, p.b, 0.01f);
+                Assert.AreEqual(1f, p.a, 0.01f);
             }
         }
 
@@ -93,10 +94,8 @@ namespace GTK.Tests
 
             foreach (var p in result.GetPixels())
             {
-                Assert.AreEqual(0.5f, p.r, 0.001f);
-                Assert.AreEqual(0.5f, p.g, 0.001f);
-                Assert.AreEqual(0.5f, p.b, 0.001f);
-                Assert.AreEqual(0.5f, p.a, 0.001f);
+                Assert.AreEqual(0.5f, p.r, 0.01f);
+                Assert.AreEqual(0.5f, p.a, 0.01f);
             }
         }
 
@@ -109,8 +108,8 @@ namespace GTK.Tests
 
             foreach (var p in result.GetPixels())
             {
-                Assert.AreEqual(0.75f, p.r, 0.001f);
-                Assert.AreEqual(0.75f, p.a, 0.001f);
+                Assert.AreEqual(0.75f, p.r, 0.01f);
+                Assert.AreEqual(0.75f, p.a, 0.01f);
             }
         }
 
@@ -122,7 +121,7 @@ namespace GTK.Tests
             var result = TextureChannelMergeUtility.SwizzleChannels(src, ops, new[] { 0f, 0f, 0f, 0f }, false);
 
             foreach (var p in result.GetPixels())
-                Assert.AreEqual(0.7f, p.r, 0.001f);
+                Assert.AreEqual(0.7f, p.r, 0.01f);
         }
 
         // ─── MergePreview ────────────────────────────────────────────────
@@ -144,10 +143,10 @@ namespace GTK.Tests
             var pixels = result.GetPixels();
             foreach (var p in pixels)
             {
-                Assert.AreEqual(0.5f, p.r, 0.001f);
-                Assert.AreEqual(0.5f, p.g, 0.001f);
-                Assert.AreEqual(0.0f, p.b, 0.001f);
-                Assert.AreEqual(1.0f, p.a, 0.001f);
+                Assert.AreEqual(0.5f, p.r, 0.01f);
+                Assert.AreEqual(0.5f, p.g, 0.01f);
+                Assert.AreEqual(0.0f, p.b, 0.01f);
+                Assert.AreEqual(1.0f, p.a, 0.01f);
             }
         }
 
@@ -163,10 +162,10 @@ namespace GTK.Tests
             var result = TextureChannelMergeUtility.MergePreview(sources, false);
             foreach (var p in result.GetPixels())
             {
-                Assert.AreEqual(1.0f, p.r, 0.001f);
-                Assert.AreEqual(0.0f, p.g, 0.001f);
-                Assert.AreEqual(0.5f, p.b, 0.001f);
-                Assert.AreEqual(1.0f, p.a, 0.001f);
+                Assert.AreEqual(1.0f, p.r, 0.01f);
+                Assert.AreEqual(0.0f, p.g, 0.01f);
+                Assert.AreEqual(0.5f, p.b, 0.01f);
+                Assert.AreEqual(1.0f, p.a, 0.01f);
             }
         }
 

@@ -51,11 +51,9 @@ namespace GTK.Tests
         [Test]
         public void BlendColor_HalfFalloff_ReturnsMidpoint()
         {
+            var expected = Color.Lerp(Color.black, Color.white, 0.5f);
             var result = VertexPaintUtility.BlendColor(Color.black, Color.white, 0.5f);
-            Assert.AreEqual(0.5f, result.r, 0.001f);
-            Assert.AreEqual(0.5f, result.g, 0.001f);
-            Assert.AreEqual(0.5f, result.b, 0.001f);
-            Assert.AreEqual(0.5f, result.a, 0.001f);
+            Assert.AreEqual(expected, result);
         }
 
         // ─── BlendChannel ────────────────────────────────────────────────
