@@ -31,4 +31,3 @@ jobs:
           name: v${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
-          discussion_category_name: announcements
