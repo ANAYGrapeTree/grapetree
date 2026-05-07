@@ -9,7 +9,7 @@
     "url": "https://github.com/ANAYGrapeTree/grapetree.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/ANAYGrapeTree"
+    "registry": "https://npm.pkg.github.com/"
   },
   "author": {
     "name": "ANAYGrapeTree",
