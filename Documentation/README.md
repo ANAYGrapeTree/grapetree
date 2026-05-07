@@ -1,7 +1,7 @@
 # Grapetree Toolkit (GTK) 使用文档
 
 > **Package:** `com.grapetree.gtk`  
-> **Version:** 0.1.0  
+> **Version:** 0.2.0  
 > **Unity:** 2022.3+ (兼容团结引擎)
 
 ---
@@ -155,8 +155,6 @@ com.grapetree.gtk/
 │       └── VertexPaint/
 │           ├── VertexPaintWindow.cs
 │           └── VertexPaintUtility.cs
-└── Runtime/
-    └── GTK/                       ← 运行时组件（预留）
 ```
 
 ---
