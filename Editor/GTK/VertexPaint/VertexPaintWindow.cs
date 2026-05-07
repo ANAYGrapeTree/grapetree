@@ -199,14 +199,14 @@ namespace GTK.VertexPaint
 
         private void DrawActionsSection()
         {
-            // Top row: Save + Fill
+            // Top row: Save As + Save Original + Fill
             EditorGUILayout.BeginHorizontal();
-            GUI.enabled = _workingMesh != null;
-            if (GUILayout.Button(new GUIContent(" Save", "Save working mesh as a new asset"),
+            if (GUILayout.Button(new GUIContent(" Save As...", "Export working mesh as a new asset"),
                     GUILayout.Height(28)))
                 ExportWorkingMesh();
-            GUI.enabled = true;
-
+            if (GUILayout.Button(new GUIContent(" Save Orig", "Write vertex colors back to the original mesh"),
+                    GUILayout.Height(28)))
+                SaveToOriginalMesh();
             if (GUILayout.Button(new GUIContent(" Fill", "Apply current color to all vertices"),
                     GUILayout.Height(28)))
                 ExecuteFlood();
@@ -431,6 +431,31 @@ namespace GTK.VertexPaint
             _smoothBuffer = _sourceMesh != null ? new Color[_sourceMesh.vertexCount] : null;
 
             Log($"Saved and applied  {savePath}");
+        }
+
+        // ─── Save to Original ───────────────────────────────────────────
+        private void SaveToOriginalMesh()
+        {
+            Mesh src = _workingMesh ?? _sourceMesh;
+            if (src == null)
+            {
+                Log("Nothing to save — no mesh found.");
+                return;
+            }
+
+            if (_sourceMesh == null)
+            {
+                Log("No original mesh reference.");
+                return;
+            }
+
+            _sourceMesh.colors = src.colors;
+            _sourceMesh.UploadMeshData(false);
+            EditorUtility.SetDirty(_sourceMesh);
+            AssetDatabase.SaveAssets();
+
+            _hasUnsavedChanges = false;
+            Log($"Vertex colors written to {_sourceMesh.name}.");
         }
 
         // ─── Flood ──────────────────────────────────────────────────────
