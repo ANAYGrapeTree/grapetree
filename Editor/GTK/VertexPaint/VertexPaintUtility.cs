@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEditor;
+using System.Collections.Generic;
 
 namespace GTK.VertexPaint
 {
@@ -23,6 +24,51 @@ namespace GTK.VertexPaint
         public static Color BlendColor(Color current, Color target, float falloff)
         {
             return Color.Lerp(current, target, falloff);
+        }
+
+        /// <summary>Fill all vertices with a color or channel value.</summary>
+        public static void FloodColors(Color[] colors, Color brushColor, PaintChannel channel, float value)
+        {
+            if (channel == PaintChannel.RGBA)
+            {
+                for (int i = 0; i < colors.Length; i++)
+                    colors[i] = brushColor;
+            }
+            else if (channel == PaintChannel.Smooth)
+            {
+                return; // smooth has no flood
+            }
+            else
+            {
+                int ch = (int)channel - 1;
+                for (int i = 0; i < colors.Length; i++)
+                    colors[i][ch] = value;
+            }
+        }
+
+        /// <summary>Build vertex adjacency from triangles. Returns null for vertex with no neighbors.</summary>
+        public static List<int>[] BuildAdjacency(int[] triangles, int vertexCount)
+        {
+            var adj = new List<int>[vertexCount];
+            for (int t = 0; t < triangles.Length; t += 3)
+            {
+                int i0 = triangles[t];
+                int i1 = triangles[t + 1];
+                int i2 = triangles[t + 2];
+
+                AddEdge(adj, i0, i1);
+                AddEdge(adj, i0, i2);
+                AddEdge(adj, i1, i2);
+            }
+            return adj;
+        }
+
+        private static void AddEdge(List<int>[] adj, int a, int b)
+        {
+            if (adj[a] == null) adj[a] = new List<int>(4);
+            if (!adj[a].Contains(b)) adj[a].Add(b);
+            if (adj[b] == null) adj[b] = new List<int>(4);
+            if (!adj[b].Contains(a)) adj[b].Add(a);
         }
 
         /// <summary>Ray-mesh intersection using Möller–Trumbore algorithm.</summary>
@@ -55,7 +101,6 @@ namespace GTK.VertexPaint
             return hitFound;
         }
 
-        /// <summary>Möller–Trumbore ray-triangle intersection.</summary>
         private static bool RayTriangle(Ray ray, Vector3 v0, Vector3 v1, Vector3 v2,
             out float dist, out Vector2 bary)
         {

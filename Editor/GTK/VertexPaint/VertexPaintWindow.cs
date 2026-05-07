@@ -10,7 +10,8 @@ namespace GTK.VertexPaint
         R,
         G,
         B,
-        A
+        A,
+        Smooth
     }
 
     public class VertexPaintWindow : EditorWindow
@@ -19,7 +20,7 @@ namespace GTK.VertexPaint
         private static void ShowWindow()
         {
             var w = GetWindow<VertexPaintWindow>(false, "Vertex Paint");
-            w.minSize = new Vector2(320, 240);
+            w.minSize = new Vector2(320, 300);
             w.Show();
         }
 
@@ -31,33 +32,42 @@ namespace GTK.VertexPaint
         [SerializeField] private float _brushOpacity = 1f;
         [SerializeField] private float _channelValue = 1f;
 
-        // ─── Paint state ────────────────────────────────────────────────
+        // ─── Painting state ─────────────────────────────────────────────
         private bool _isPainting;
         private bool _isEditing;
         private bool _isPreview;
         private bool _recordUndo;
-        private Mesh _targetMesh;
+
+        // ─── Mesh references ────────────────────────────────────────────
+        private Mesh _sourceMesh;      // original asset mesh (read-only)
+        private Mesh _workingMesh;     // instance copy (painted on)
+        private bool _hasUnsavedChanges;
+
+        // ─── Preview ────────────────────────────────────────────────────
         private Material _previewMat;
         private Material[] _originalMaterials;
 
-        // ─── Brush modifier state ───────────────────────────────────────
+        // ─── Smooth cache ───────────────────────────────────────────────
+        private List<int>[] _adjacency;
+        private Color[] _smoothBuffer; // pre-allocated, reused
+
+        // ─── Input state ────────────────────────────────────────────────
         private bool _resizing;
         private bool _adjustingOpacity;
         private bool _adjustingFalloff;
-        private Vector2 _lastMousePos;
 
-        // ─── Selection tracking ─────────────────────────────────────────
+        // ─── Selection ──────────────────────────────────────────────────
         private GameObject _lastTarget;
         private string _status = "Ready.";
 
         // ─── Log ────────────────────────────────────────────────────────
-        private List<string> _log = new List<string>();
+        private List<string> _log = new List<string>(32);
         private Vector2 _logScroll;
         private bool _logExpanded;
 
         // ─── Constants ──────────────────────────────────────────────────
-        private static readonly string[] ChannelLabels = { "RGBA", "R", "G", "B", "A" };
-        private static readonly int[] ChannelValues = { 0, 1, 2, 3, 4 };
+        private static readonly string[] ChannelLabels = { "RGBA", "R", "G", "B", "A", "Smooth" };
+        private static readonly int[] ChannelValues = { 0, 1, 2, 3, 4, 5 };
 
         // ─── Lifecycle ──────────────────────────────────────────────────
         private void OnEnable()
@@ -69,6 +79,7 @@ namespace GTK.VertexPaint
         private void OnDisable()
         {
             SceneView.duringSceneGui -= OnSceneGUI;
+            DiscardWorkingMesh();
             DisablePreview();
         }
 
@@ -79,7 +90,7 @@ namespace GTK.VertexPaint
             EditorGUILayout.Space(4);
             DrawBrushSection();
             EditorGUILayout.Space(4);
-            DrawSettingsSection();
+            DrawShortcutsSection();
             EditorGUILayout.Space(4);
             DrawActionsSection();
             EditorGUILayout.Space(2);
@@ -93,117 +104,104 @@ namespace GTK.VertexPaint
             EditorGUILayout.LabelField("Target", EditorStyles.boldLabel);
 
             var go = Selection.activeGameObject;
-            bool valid = ValidateTarget(go);
+            bool valid = go != null
+                && (go.TryGetComponent<MeshFilter>(out _) || go.TryGetComponent<SkinnedMeshRenderer>(out _));
 
             if (!valid)
             {
-                EditorGUILayout.HelpBox("Select a GameObject with a MeshFilter or SkinnedMeshRenderer.", MessageType.Info);
-                if (_lastTarget != null)
-                {
-                    _lastTarget = null;
-                    _targetMesh = null;
-                    _isEditing = false;
-                    DisablePreview();
-                }
+                EditorGUILayout.HelpBox(
+                    "Select a GameObject with MeshFilter or SkinnedMeshRenderer.", MessageType.Info);
+                ClearTarget();
                 return;
             }
 
             if (go != _lastTarget)
-            {
-                _lastTarget = go;
-                _targetMesh = FindMesh(go);
-                _isEditing = false;
-                _isPreview = false;
-                DisablePreview();
-                Log($"Target: {go.name} ({(_targetMesh != null ? _targetMesh.vertexCount + " verts" : "no mesh")})");
-            }
+                SetTarget(go);
 
             EditorGUILayout.LabelField(go.name, EditorStyles.boldLabel);
-            if (_targetMesh != null)
-                EditorGUILayout.LabelField($"Mesh: {_targetMesh.name}  |  {_targetMesh.vertexCount} verts",
+            if (_sourceMesh != null)
+            {
+                string icon = _hasUnsavedChanges ? " \u25cf" : "";
+                EditorGUILayout.LabelField(
+                    $"{_sourceMesh.name}  |  {_sourceMesh.vertexCount} verts{icon}",
                     EditorStyles.miniLabel);
+            }
         }
 
         private void DrawBrushSection()
         {
             EditorGUILayout.LabelField("Brush", EditorStyles.boldLabel);
 
-            // Channel
             int ch = (int)_paintChannel;
             ch = EditorGUILayout.IntPopup("Channel", ch, ChannelLabels, ChannelValues);
             _paintChannel = (PaintChannel)ch;
 
-            // Color (RGBA mode) or Value (single channel mode)
             if (_paintChannel == PaintChannel.RGBA)
-            {
                 _brushColor = EditorGUILayout.ColorField("Color", _brushColor);
-            }
-            else
-            {
+            else if (_paintChannel != PaintChannel.Smooth)
                 _channelValue = EditorGUILayout.Slider("Value", _channelValue, 0f, 1f);
-            }
 
-            // Size
             EditorGUILayout.MinMaxSlider($"Size: {_brushSize:F2}", ref _brushSize, ref _brushSize, 0.01f, 5f);
             _brushSize = Mathf.Max(_brushSize, 0.01f);
-
-            // Falloff
             _brushFalloff = EditorGUILayout.Slider("Falloff", _brushFalloff, 0f, 1f);
-
-            // Opacity
             _brushOpacity = EditorGUILayout.Slider("Opacity", _brushOpacity, 0f, 1f);
         }
 
-        private void DrawSettingsSection()
+        private void DrawShortcutsSection()
         {
             EditorGUILayout.LabelField("Controls", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
-                "Paint: Left Mouse  |  Size: Ctrl+Mouse X  |  Opacity: Shift+Mouse X  |  Falloff: Ctrl+Shift+X",
+                "Paint: Left Mouse  |  Size: Ctrl+X  |  Opacity: Shift+X  |  Falloff: Ctrl+Shift+X",
                 EditorStyles.wordWrappedMiniLabel);
         }
 
         private void DrawActionsSection()
         {
+            // Action buttons row
+            EditorGUILayout.BeginHorizontal();
+
+            GUI.enabled = _workingMesh != null && _hasUnsavedChanges;
+            if (GUILayout.Button(new GUIContent(" Save", "Write vertex colors back to the original mesh asset"),
+                    GUILayout.Height(28)))
+                SaveMesh();
+            GUI.enabled = true;
+
+            if (GUILayout.Button(new GUIContent(" Fill", "Apply current color to all vertices"),
+                    GUILayout.Height(28)))
+                ExecuteFlood();
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            // Paint / Preview buttons
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
             var paintIcon = EditorGUIUtility.IconContent("EditCollider").image;
-            string paintLabel = _isEditing ? " Stop Painting" : " Start Paint";
-            if (GUILayout.Button(new GUIContent(paintLabel, paintIcon, "Toggle painting mode (C)"),
-                    GUILayout.Width(130), GUILayout.Height(28)))
-            {
-                _isEditing = !_isEditing;
-            }
+            string paintLabel = _isEditing ? "  Stop Painting" : "  Start Paint";
+            if (GUILayout.Button(new GUIContent(paintLabel, paintIcon, "Toggle painting (C)"),
+                    GUILayout.Width(140), GUILayout.Height(28)))
+                TogglePaint();
 
             GUILayout.Space(8);
 
             var previewIcon = EditorGUIUtility.IconContent("VisibilityOn").image;
-            string previewLabel = _isPreview ? " Stop Preview" : " Start Preview";
+            string previewLabel = _isPreview ? "  Stop Preview" : "  Start Preview";
             if (GUILayout.Button(new GUIContent(previewLabel, previewIcon, "Toggle vertex-color preview"),
-                    GUILayout.Width(130), GUILayout.Height(28)))
-            {
-                if (_isPreview)
-                {
-                    _isPreview = false;
-                    DisablePreview();
-                }
-                else
-                {
-                    _isPreview = true;
-                    EnablePreview();
-                }
-            }
+                    GUILayout.Width(140), GUILayout.Height(28)))
+                TogglePreview();
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
 
             // Status line
-            string modeInfo = "";
-            if (_isEditing) modeInfo += "\u25cf Painting";
-            if (_isEditing && _isPreview) modeInfo += "  |  ";
-            if (_isPreview) modeInfo += "\u25cf Previewing";
-            if (!string.IsNullOrEmpty(modeInfo))
-                EditorGUILayout.LabelField(modeInfo, EditorStyles.boldLabel);
+            string mode = "";
+            if (_isEditing) mode += "\u25cf Painting";
+            if (_isEditing && _isPreview) mode += "  |  ";
+            if (_isPreview) mode += "\u25cf Previewing";
+            if (mode.Length > 0)
+                EditorGUILayout.LabelField(mode, EditorStyles.boldLabel);
             else
                 EditorGUILayout.LabelField("Idle", EditorStyles.miniLabel);
         }
@@ -212,7 +210,8 @@ namespace GTK.VertexPaint
         {
             var r = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
             r = EditorGUI.IndentedRect(r);
-            EditorGUI.HelpBox(r, _status, MessageType.None);
+            MessageType type = _hasUnsavedChanges ? MessageType.Warning : MessageType.None;
+            EditorGUI.HelpBox(r, _status, type);
         }
 
         private void DrawLogSection()
@@ -231,50 +230,198 @@ namespace GTK.VertexPaint
             }
         }
 
+        // ─── Target Management ──────────────────────────────────────────
+        private void SetTarget(GameObject go)
+        {
+            DiscardWorkingMesh();
+            _lastTarget = go;
+
+            if (go.TryGetComponent<MeshFilter>(out MeshFilter mf))
+                _sourceMesh = mf.sharedMesh;
+            else if (go.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
+                _sourceMesh = smr.sharedMesh;
+
+            _isEditing = false;
+            _isPreview = false;
+            _adjacency = null;
+            _smoothBuffer = null;
+            _hasUnsavedChanges = false;
+
+            if (_sourceMesh != null)
+            {
+                _smoothBuffer = new Color[_sourceMesh.vertexCount];
+                Log($"Target: {go.name}  ({_sourceMesh.vertexCount} verts)");
+            }
+        }
+
+        private void ClearTarget()
+        {
+            if (_lastTarget != null)
+            {
+                DiscardWorkingMesh();
+                _lastTarget = null;
+                _sourceMesh = null;
+                _isEditing = false;
+                _isPreview = false;
+                _adjacency = null;
+                _smoothBuffer = null;
+                _hasUnsavedChanges = false;
+            }
+        }
+
+        // ─── Paint / Preview Toggles ────────────────────────────────────
+        private void TogglePaint()
+        {
+            _isEditing = !_isEditing;
+            if (_isEditing)
+            {
+                EnsureWorkingMesh();
+                if (_workingMesh != null)
+                    Log("Painting mode on.");
+                else
+                    _isEditing = false;
+            }
+            else
+            {
+                Log("Painting mode off.");
+            }
+        }
+
+        private void TogglePreview()
+        {
+            if (_isPreview)
+            {
+                _isPreview = false;
+                DisablePreview();
+                Log("Preview off.");
+            }
+            else
+            {
+                _isPreview = true;
+                EnablePreview();
+            }
+        }
+
+        // ─── Working Mesh ───────────────────────────────────────────────
+        private void EnsureWorkingMesh()
+        {
+            if (_workingMesh != null || _sourceMesh == null || _lastTarget == null)
+                return;
+
+            _workingMesh = Object.Instantiate(_sourceMesh);
+            _workingMesh.hideFlags = HideFlags.DontSave;
+            _workingMesh.name = _sourceMesh.name + " (working)";
+
+            if (_lastTarget.TryGetComponent<MeshFilter>(out MeshFilter mf))
+                mf.mesh = _workingMesh;
+            else if (_lastTarget.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
+                smr.sharedMesh = _workingMesh;
+
+            _hasUnsavedChanges = true;
+            Log("Created working mesh copy. Paint to modify, then Save to persist.");
+        }
+
+        private void DiscardWorkingMesh()
+        {
+            if (_workingMesh == null) return;
+
+            if (_lastTarget != null)
+            {
+                if (_lastTarget.TryGetComponent<MeshFilter>(out MeshFilter mf))
+                    mf.sharedMesh = _sourceMesh;
+                else if (_lastTarget.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
+                    smr.sharedMesh = _sourceMesh;
+            }
+
+            Object.DestroyImmediate(_workingMesh);
+            _workingMesh = null;
+            _hasUnsavedChanges = false;
+        }
+
+        private void SaveMesh()
+        {
+            if (_sourceMesh == null || _workingMesh == null) return;
+
+            _sourceMesh.colors = _workingMesh.colors;
+            _sourceMesh.UploadMeshData(false);
+            EditorUtility.SetDirty(_sourceMesh);
+            AssetDatabase.SaveAssets();
+
+            _hasUnsavedChanges = false;
+            Log($"Saved vertex colors to {_sourceMesh.name}.");
+        }
+
+        // ─── Flood ──────────────────────────────────────────────────────
+        private void ExecuteFlood()
+        {
+            Mesh target = _workingMesh ?? _sourceMesh;
+            if (target == null) return;
+
+            EnsureWorkingMesh();
+            if (_workingMesh == null) return;
+
+            Undo.RegisterCompleteObjectUndo(_workingMesh, "Vertex Flood");
+            var colors = _workingMesh.colors;
+            if (colors == null || colors.Length == 0)
+                colors = new Color[_workingMesh.vertexCount];
+
+            VertexPaintUtility.FloodColors(colors, _brushColor, _paintChannel, _channelValue);
+
+            _workingMesh.colors = colors;
+            _workingMesh.UploadMeshData(false);
+            _hasUnsavedChanges = true;
+            Log($"Flooded {_workingMesh.vertexCount} vertices.");
+        }
+
         // ─── Scene View ─────────────────────────────────────────────────
         private void OnSceneGUI(SceneView sv)
         {
-            if (!_isEditing || _targetMesh == null || _lastTarget == null)
+            if (!_isEditing || _workingMesh == null || _lastTarget == null)
                 return;
 
             var evt = Event.current;
-            _lastMousePos = evt.mousePosition;
 
-            // Prevent selection while painting
             HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
 
-            // Ray-mesh intersection
             var ray = HandleUtility.GUIPointToWorldRay(evt.mousePosition);
             RaycastHit hit;
-            bool isHit = VertexPaintUtility.RaycastMesh(ray, _targetMesh,
+            bool isHit = VertexPaintUtility.RaycastMesh(ray, _workingMesh,
                 _lastTarget.transform.localToWorldMatrix, out hit);
 
-            // Draw brush disc
             if (isHit || _resizing)
             {
-                float alpha = _brushOpacity;
-                Color discColor = _paintChannel == PaintChannel.RGBA
-                    ? new Color(_brushColor.r, _brushColor.g, _brushColor.b, alpha)
-                    : new Color(_channelValue, 0f, 0f, alpha);
-
-                Handles.color = discColor;
-                Handles.DrawSolidDisc(hit.point, hit.normal, _brushSize);
-                Handles.color = Color.white;
-                Handles.DrawWireDisc(hit.point, hit.normal, _brushSize);
-                Handles.color = new Color(1f, 1f, 1f, 0.5f);
-                Handles.DrawWireDisc(hit.point, hit.normal, _brushSize * _brushFalloff);
+                DrawBrushDisc(hit);
             }
 
-            // Process input
             ProcessSceneInput(evt, isHit, hit);
 
             if (evt.type == EventType.Repaint)
                 Repaint();
         }
 
+        private void DrawBrushDisc(RaycastHit hit)
+        {
+            float alpha = _brushOpacity;
+            Color discColor;
+
+            if (_paintChannel == PaintChannel.RGBA)
+                discColor = new Color(_brushColor.r, _brushColor.g, _brushColor.b, alpha);
+            else if (_paintChannel == PaintChannel.Smooth)
+                discColor = new Color(0f, 0.5f, 1f, alpha * 0.5f);
+            else
+                discColor = new Color(_channelValue, 0f, 0f, alpha);
+
+            Handles.color = discColor;
+            Handles.DrawSolidDisc(hit.point, hit.normal, _brushSize);
+            Handles.color = Color.white;
+            Handles.DrawWireDisc(hit.point, hit.normal, _brushSize);
+            Handles.color = new Color(1f, 1f, 1f, 0.5f);
+            Handles.DrawWireDisc(hit.point, hit.normal, _brushSize * _brushFalloff);
+        }
+
         private void ProcessSceneInput(Event evt, bool isHit, RaycastHit hit)
         {
-            // Modifier: Ctrl+drag = resize brush
+            // Ctrl+drag = brush size
             if (evt.control && !evt.shift && evt.button == 0)
             {
                 if (evt.type == EventType.MouseDrag)
@@ -289,7 +436,7 @@ namespace GTK.VertexPaint
                 return;
             }
 
-            // Modifier: Shift+drag = opacity
+            // Shift+drag = opacity
             if (evt.shift && !evt.control && evt.button == 0)
             {
                 if (evt.type == EventType.MouseDrag)
@@ -304,7 +451,7 @@ namespace GTK.VertexPaint
                 return;
             }
 
-            // Modifier: Ctrl+Shift+drag = falloff
+            // Ctrl+Shift+drag = falloff
             if (evt.control && evt.shift && evt.button == 0)
             {
                 if (evt.type == EventType.MouseDrag)
@@ -319,7 +466,7 @@ namespace GTK.VertexPaint
                 return;
             }
 
-            // Painting: left mouse drag
+            // Left mouse = paint
             if (!evt.control && !evt.shift && !evt.alt && evt.button == 0)
             {
                 if (evt.type == EventType.MouseDown)
@@ -335,10 +482,15 @@ namespace GTK.VertexPaint
                 {
                     if (_recordUndo)
                     {
-                        Undo.RegisterCompleteObjectUndo(_targetMesh, "Vertex Paint");
+                        Undo.RegisterCompleteObjectUndo(_workingMesh, "Vertex Paint");
                         _recordUndo = false;
                     }
-                    PaintAt(hit.point, hit.normal);
+
+                    if (_paintChannel == PaintChannel.Smooth)
+                        PaintSmooth(hit.point);
+                    else
+                        PaintColor(hit.point);
+
                     evt.Use();
                     return;
                 }
@@ -346,58 +498,101 @@ namespace GTK.VertexPaint
                 if (evt.type == EventType.MouseUp)
                 {
                     _isPainting = false;
-                    _status = "Ready.";
+                    _status = _hasUnsavedChanges ? "Modified." : "Ready.";
                     evt.Use();
                     return;
                 }
             }
         }
 
-        // ─── Painting ───────────────────────────────────────────────────
-        private void PaintAt(Vector3 hitPoint, Vector3 hitNormal)
+        // ─── Paint: Color / Channel ─────────────────────────────────────
+        private void PaintColor(Vector3 hitPoint)
         {
-            if (_targetMesh == null) return;
-
-            var verts = _targetMesh.vertices;
-            var colors = _targetMesh.colors;
-
+            var verts = _workingMesh.vertices;
+            var colors = _workingMesh.colors;
             if (colors == null || colors.Length == 0)
-            {
                 colors = new Color[verts.Length];
-            }
 
             float falloffPow = Mathf.Clamp01(1f - _brushFalloff);
             var localToWorld = _lastTarget.transform.localToWorldMatrix;
 
             for (int i = 0; i < verts.Length; i++)
             {
-                Vector3 worldPos = localToWorld.MultiplyPoint(verts[i]);
-                float dist = (worldPos - hitPoint).magnitude;
-
+                Vector3 wp = localToWorld.MultiplyPoint(verts[i]);
+                float dist = (wp - hitPoint).magnitude;
                 if (dist > _brushSize) continue;
 
                 float falloff = VertexPaintUtility.LinearFalloff(dist, _brushSize);
                 falloff = Mathf.Pow(falloff, falloffPow) * _brushOpacity;
 
                 if (_paintChannel == PaintChannel.RGBA)
-                {
                     colors[i] = VertexPaintUtility.BlendColor(colors[i], _brushColor, falloff);
-                }
                 else
                 {
-                    int ch = (int)_paintChannel - 1; // RGBA=0,R=1→0,G=2→1,B=3→2,A=4→3
+                    int ch = (int)_paintChannel - 1;
                     colors[i] = VertexPaintUtility.BlendChannel(colors[i], _channelValue, falloff, ch);
                 }
             }
 
-            _targetMesh.colors = colors;
-            _targetMesh.UploadMeshData(false);
+            _workingMesh.colors = colors;
+            _workingMesh.UploadMeshData(false);
+            _hasUnsavedChanges = true;
+        }
+
+        // ─── Paint: Smooth ──────────────────────────────────────────────
+        private void PaintSmooth(Vector3 hitPoint)
+        {
+            var verts = _workingMesh.vertices;
+            var colors = _workingMesh.colors;
+            if (colors == null || colors.Length == 0)
+                colors = new Color[verts.Length];
+
+            // Lazy-build adjacency
+            if (_adjacency == null)
+                _adjacency = VertexPaintUtility.BuildAdjacency(
+                    _workingMesh.triangles, verts.Length);
+
+            // Ensure smooth buffer is sized correctly
+            if (_smoothBuffer == null || _smoothBuffer.Length != colors.Length)
+                _smoothBuffer = new Color[colors.Length];
+            System.Array.Copy(colors, _smoothBuffer, colors.Length);
+
+            float falloffPow = Mathf.Clamp01(1f - _brushFalloff);
+            var localToWorld = _lastTarget.transform.localToWorldMatrix;
+
+            for (int i = 0; i < verts.Length; i++)
+            {
+                Vector3 wp = localToWorld.MultiplyPoint(verts[i]);
+                float dist = (wp - hitPoint).magnitude;
+                if (dist > _brushSize) continue;
+
+                float falloff = VertexPaintUtility.LinearFalloff(dist, _brushSize);
+                falloff = Mathf.Pow(falloff, falloffPow) * _brushOpacity;
+
+                var sum = colors[i];
+                int count = 1;
+                if (_adjacency[i] != null)
+                {
+                    foreach (int n in _adjacency[i])
+                    {
+                        sum += colors[n];
+                        count++;
+                    }
+                }
+
+                _smoothBuffer[i] = Color.Lerp(colors[i], sum / count, falloff);
+            }
+
+            System.Array.Copy(_smoothBuffer, colors, colors.Length);
+            _workingMesh.colors = colors;
+            _workingMesh.UploadMeshData(false);
+            _hasUnsavedChanges = true;
         }
 
         // ─── Preview ─────────────────────────────────────────────────────
         private void EnablePreview()
         {
-            if (_lastTarget == null || _targetMesh == null) return;
+            if (_lastTarget == null || _sourceMesh == null) return;
 
             var shader = VertexPaintUtility.GetOrCreatePreviewShader();
             if (shader == null) { Log("Preview shader not found."); return; }
@@ -407,15 +602,14 @@ namespace GTK.VertexPaint
                 _originalMaterials = mr.sharedMaterials;
                 _previewMat = new Material(shader) { hideFlags = HideFlags.DontSave };
                 mr.sharedMaterials = System.Array.ConvertAll(_originalMaterials, _ => _previewMat);
-                Log("Preview enabled.");
             }
             else if (_lastTarget.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
             {
                 _originalMaterials = smr.sharedMaterials;
                 _previewMat = new Material(shader) { hideFlags = HideFlags.DontSave };
                 smr.sharedMaterials = System.Array.ConvertAll(_originalMaterials, _ => _previewMat);
-                Log("Preview enabled.");
             }
+            Log("Preview on.");
         }
 
         private void DisablePreview()
@@ -437,22 +631,6 @@ namespace GTK.VertexPaint
         }
 
         // ─── Helpers ────────────────────────────────────────────────────
-        private static bool ValidateTarget(GameObject go)
-        {
-            return go != null
-                && (go.TryGetComponent<MeshFilter>(out _) && go.TryGetComponent<MeshRenderer>(out _)
-                    || go.TryGetComponent<SkinnedMeshRenderer>(out _));
-        }
-
-        private static Mesh FindMesh(GameObject go)
-        {
-            if (go.TryGetComponent<MeshFilter>(out MeshFilter mf))
-                return mf.sharedMesh;
-            if (go.TryGetComponent<SkinnedMeshRenderer>(out SkinnedMeshRenderer smr))
-                return smr.sharedMesh;
-            return null;
-        }
-
         private void Log(string msg)
         {
             _log.Add($"[{System.DateTime.Now:HH:mm:ss}] {msg}");
