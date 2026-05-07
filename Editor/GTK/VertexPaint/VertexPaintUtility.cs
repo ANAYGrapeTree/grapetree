@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.IO;
 
 namespace GTK.VertexPaint
 {
@@ -36,7 +37,7 @@ namespace GTK.VertexPaint
             }
             else if (channel == PaintChannel.Smooth)
             {
-                return; // smooth has no flood
+                return;
             }
             else
             {
@@ -46,7 +47,7 @@ namespace GTK.VertexPaint
             }
         }
 
-        /// <summary>Build vertex adjacency from triangles. Returns null for vertex with no neighbors.</summary>
+        /// <summary>Build vertex adjacency from triangles.</summary>
         public static List<int>[] BuildAdjacency(int[] triangles, int vertexCount)
         {
             var adj = new List<int>[vertexCount];
@@ -69,6 +70,20 @@ namespace GTK.VertexPaint
             if (!adj[a].Contains(b)) adj[a].Add(b);
             if (adj[b] == null) adj[b] = new List<int>(4);
             if (!adj[b].Contains(a)) adj[b].Add(a);
+        }
+
+        /// <summary>Load the VertexColorPreview shader shipped with the package.</summary>
+        public static Shader GetOrCreatePreviewShader()
+        {
+            var shader = Shader.Find("Hidden/GTK/VertexColorPreview");
+            if (shader != null) return shader;
+
+            // Fallback: search by name in AssetDatabase
+            var guids = AssetDatabase.FindAssets("VertexColorPreview t:Shader");
+            if (guids.Length > 0)
+                return AssetDatabase.LoadAssetAtPath<Shader>(AssetDatabase.GUIDToAssetPath(guids[0]));
+
+            return null;
         }
 
         /// <summary>Ray-mesh intersection using Möller–Trumbore algorithm.</summary>
@@ -129,39 +144,6 @@ namespace GTK.VertexPaint
             dist = t;
             bary = new Vector2(u, v);
             return true;
-        }
-
-        /// <summary>Generate a vertex-color preview shader asset.</summary>
-        public static Shader GetOrCreatePreviewShader()
-        {
-            const string path = "Assets/GTK/VertexColorPreview.shader";
-            Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(path);
-            if (shader != null) return shader;
-
-            string code =
-                "Shader \"Hidden/GTK/VertexColorPreview\"\n"
-                + "{\n"
-                + "    SubShader\n"
-                + "    {\n"
-                + "        Tags { \"RenderType\"=\"Opaque\" }\n"
-                + "        Pass\n"
-                + "        {\n"
-                + "            HLSLPROGRAM\n"
-                + "            #pragma vertex vert\n"
-                + "            #pragma fragment frag\n"
-                + "            #include \"UnityCG.cginc\"\n"
-                + "            struct v2f { float4 pos:SV_POSITION; float4 color:COLOR0; };\n"
-                + "            v2f vert(appdata_full v) { v2f o; o.pos = UnityObjectToClipPos(v.vertex); o.color = v.color; return o; }\n"
-                + "            fixed4 frag(v2f i):SV_Target { return i.color; }\n"
-                + "            ENDHLSL\n"
-                + "        }\n"
-                + "    }\n"
-                + "}\n";
-
-            System.IO.Directory.CreateDirectory(Application.dataPath + "/GTK");
-            System.IO.File.WriteAllText(path, code);
-            AssetDatabase.ImportAsset(path);
-            return AssetDatabase.LoadAssetAtPath<Shader>(path);
         }
     }
 }

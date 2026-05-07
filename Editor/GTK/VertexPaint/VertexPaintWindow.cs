@@ -20,7 +20,7 @@ namespace GTK.VertexPaint
         private static void ShowWindow()
         {
             var w = GetWindow<VertexPaintWindow>(false, "Vertex Paint");
-            w.minSize = new Vector2(320, 300);
+            w.minSize = new Vector2(340, 340);
             w.Show();
         }
 
@@ -28,6 +28,8 @@ namespace GTK.VertexPaint
         [SerializeField] private PaintChannel _paintChannel = PaintChannel.RGBA;
         [SerializeField] private Color _brushColor = new Color(1f, 0f, 0f, 0f);
         [SerializeField] private float _brushSize = 0.25f;
+        [SerializeField] private float _brushSizeMin = 0.01f;
+        [SerializeField] private float _brushSizeMax = 2f;
         [SerializeField] private float _brushFalloff = 0.5f;
         [SerializeField] private float _brushOpacity = 1f;
         [SerializeField] private float _channelValue = 1f;
@@ -39,8 +41,9 @@ namespace GTK.VertexPaint
         private bool _recordUndo;
 
         // ─── Mesh references ────────────────────────────────────────────
-        private Mesh _sourceMesh;      // original asset mesh (read-only)
-        private Mesh _workingMesh;     // instance copy (painted on)
+        private Mesh _sourceMesh;
+        private Mesh _workingMesh;
+        private string _workingUID;
         private bool _hasUnsavedChanges;
 
         // ─── Preview ────────────────────────────────────────────────────
@@ -49,7 +52,7 @@ namespace GTK.VertexPaint
 
         // ─── Smooth cache ───────────────────────────────────────────────
         private List<int>[] _adjacency;
-        private Color[] _smoothBuffer; // pre-allocated, reused
+        private Color[] _smoothBuffer;
 
         // ─── Input state ────────────────────────────────────────────────
         private bool _resizing;
@@ -121,9 +124,10 @@ namespace GTK.VertexPaint
             EditorGUILayout.LabelField(go.name, EditorStyles.boldLabel);
             if (_sourceMesh != null)
             {
+                string suffix = _workingUID != null ? $"  uid: {_workingUID}" : "";
                 string icon = _hasUnsavedChanges ? " \u25cf" : "";
                 EditorGUILayout.LabelField(
-                    $"{_sourceMesh.name}  |  {_sourceMesh.vertexCount} verts{icon}",
+                    $"{_sourceMesh.name}  |  {_sourceMesh.vertexCount} verts{suffix}{icon}",
                     EditorStyles.miniLabel);
             }
         }
@@ -132,18 +136,32 @@ namespace GTK.VertexPaint
         {
             EditorGUILayout.LabelField("Brush", EditorStyles.boldLabel);
 
+            // Channel
             int ch = (int)_paintChannel;
             ch = EditorGUILayout.IntPopup("Channel", ch, ChannelLabels, ChannelValues);
             _paintChannel = (PaintChannel)ch;
 
+            // Color / Value
             if (_paintChannel == PaintChannel.RGBA)
                 _brushColor = EditorGUILayout.ColorField("Color", _brushColor);
             else if (_paintChannel != PaintChannel.Smooth)
                 _channelValue = EditorGUILayout.Slider("Value", _channelValue, 0f, 1f);
 
-            EditorGUILayout.MinMaxSlider($"Size: {_brushSize:F2}", ref _brushSize, ref _brushSize, 0.01f, 5f);
-            _brushSize = Mathf.Max(_brushSize, 0.01f);
+            // Size: min input + slider + max input
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Size", GUILayout.Width(36));
+            _brushSizeMin = EditorGUILayout.FloatField(_brushSizeMin, GUILayout.Width(48));
+            _brushSize = EditorGUILayout.Slider(_brushSize, _brushSizeMin, _brushSizeMax);
+            _brushSizeMax = EditorGUILayout.FloatField(_brushSizeMax, GUILayout.Width(48));
+            EditorGUILayout.EndHorizontal();
+            _brushSizeMin = Mathf.Max(_brushSizeMin, 0.001f);
+            _brushSizeMax = Mathf.Max(_brushSizeMax, _brushSizeMin);
+            _brushSize = Mathf.Clamp(_brushSize, _brushSizeMin, _brushSizeMax);
+
+            // Falloff
             _brushFalloff = EditorGUILayout.Slider("Falloff", _brushFalloff, 0f, 1f);
+
+            // Opacity
             _brushOpacity = EditorGUILayout.Slider("Opacity", _brushOpacity, 0f, 1f);
         }
 
@@ -157,24 +175,22 @@ namespace GTK.VertexPaint
 
         private void DrawActionsSection()
         {
-            // Action buttons row
+            // Top row: Save + Fill
             EditorGUILayout.BeginHorizontal();
-
-            GUI.enabled = _workingMesh != null && _hasUnsavedChanges;
-            if (GUILayout.Button(new GUIContent(" Save", "Write vertex colors back to the original mesh asset"),
+            GUI.enabled = _workingMesh != null;
+            if (GUILayout.Button(new GUIContent(" Save", "Save working mesh as a new asset"),
                     GUILayout.Height(28)))
-                SaveMesh();
+                ExportWorkingMesh();
             GUI.enabled = true;
 
             if (GUILayout.Button(new GUIContent(" Fill", "Apply current color to all vertices"),
                     GUILayout.Height(28)))
                 ExecuteFlood();
-
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(4);
 
-            // Paint / Preview buttons
+            // Bottom row: Paint + Preview
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
@@ -195,7 +211,7 @@ namespace GTK.VertexPaint
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
 
-            // Status line
+            // Mode status
             string mode = "";
             if (_isEditing) mode += "\u25cf Painting";
             if (_isEditing && _isPreview) mode += "  |  ";
@@ -246,6 +262,7 @@ namespace GTK.VertexPaint
             _adjacency = null;
             _smoothBuffer = null;
             _hasUnsavedChanges = false;
+            _workingUID = null;
 
             if (_sourceMesh != null)
             {
@@ -266,6 +283,7 @@ namespace GTK.VertexPaint
                 _adjacency = null;
                 _smoothBuffer = null;
                 _hasUnsavedChanges = false;
+                _workingUID = null;
             }
         }
 
@@ -308,9 +326,10 @@ namespace GTK.VertexPaint
             if (_workingMesh != null || _sourceMesh == null || _lastTarget == null)
                 return;
 
+            _workingUID = System.Guid.NewGuid().ToString("N").Substring(0, 8);
             _workingMesh = Object.Instantiate(_sourceMesh);
             _workingMesh.hideFlags = HideFlags.DontSave;
-            _workingMesh.name = _sourceMesh.name + " (working)";
+            _workingMesh.name = $"{_sourceMesh.name}_paint_{_workingUID}";
 
             if (_lastTarget.TryGetComponent<MeshFilter>(out MeshFilter mf))
                 mf.mesh = _workingMesh;
@@ -318,7 +337,7 @@ namespace GTK.VertexPaint
                 smr.sharedMesh = _workingMesh;
 
             _hasUnsavedChanges = true;
-            Log("Created working mesh copy. Paint to modify, then Save to persist.");
+            Log($"Working copy created  uid: {_workingUID}");
         }
 
         private void DiscardWorkingMesh()
@@ -336,27 +355,44 @@ namespace GTK.VertexPaint
             Object.DestroyImmediate(_workingMesh);
             _workingMesh = null;
             _hasUnsavedChanges = false;
+            _workingUID = null;
         }
 
-        private void SaveMesh()
+        // ─── Save / Export ──────────────────────────────────────────────
+        private void ExportWorkingMesh()
         {
-            if (_sourceMesh == null || _workingMesh == null) return;
+            if (_workingMesh == null) return;
 
-            _sourceMesh.colors = _workingMesh.colors;
-            _sourceMesh.UploadMeshData(false);
-            EditorUtility.SetDirty(_sourceMesh);
+            string defaultName = _workingUID != null
+                ? $"painted_{_workingUID}.asset"
+                : "painted_mesh.asset";
+
+            string savePath = EditorUtility.SaveFilePanelInProject(
+                "Save Painted Mesh",
+                defaultName,
+                "asset",
+                "Save the painted mesh as a new mesh asset.");
+
+            if (string.IsNullOrEmpty(savePath))
+            {
+                Log("Save cancelled.");
+                return;
+            }
+
+            // Use a copy since AssetDatabase.CreateAsset takes ownership
+            var export = Object.Instantiate(_workingMesh);
+            export.name = System.IO.Path.GetFileNameWithoutExtension(savePath);
+            AssetDatabase.CreateAsset(export, savePath);
             AssetDatabase.SaveAssets();
 
             _hasUnsavedChanges = false;
-            Log($"Saved vertex colors to {_sourceMesh.name}.");
+            Log($"Mesh saved  {savePath}");
         }
 
         // ─── Flood ──────────────────────────────────────────────────────
         private void ExecuteFlood()
         {
-            Mesh target = _workingMesh ?? _sourceMesh;
-            if (target == null) return;
-
+            if (_workingMesh == null && _sourceMesh == null) return;
             EnsureWorkingMesh();
             if (_workingMesh == null) return;
 
@@ -380,7 +416,6 @@ namespace GTK.VertexPaint
                 return;
 
             var evt = Event.current;
-
             HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
 
             var ray = HandleUtility.GUIPointToWorldRay(evt.mousePosition);
@@ -389,9 +424,7 @@ namespace GTK.VertexPaint
                 _lastTarget.transform.localToWorldMatrix, out hit);
 
             if (isHit || _resizing)
-            {
                 DrawBrushDisc(hit);
-            }
 
             ProcessSceneInput(evt, isHit, hit);
 
@@ -401,22 +434,29 @@ namespace GTK.VertexPaint
 
         private void DrawBrushDisc(RaycastHit hit)
         {
-            float alpha = _brushOpacity;
-            Color discColor;
-
+            Color baseColor;
             if (_paintChannel == PaintChannel.RGBA)
-                discColor = new Color(_brushColor.r, _brushColor.g, _brushColor.b, alpha);
+                baseColor = _brushColor;
             else if (_paintChannel == PaintChannel.Smooth)
-                discColor = new Color(0f, 0.5f, 1f, alpha * 0.5f);
+                baseColor = new Color(0f, 0.5f, 1f, 1f);
             else
-                discColor = new Color(_channelValue, 0f, 0f, alpha);
+                baseColor = new Color(_channelValue, _channelValue, _channelValue, 1f);
 
-            Handles.color = discColor;
+            float falloffRadius = Mathf.Max(_brushSize * _brushFalloff, 0.001f);
+
+            // Outer ring: falloff zone (low opacity, shows brush boundary)
+            Handles.color = new Color(baseColor.r, baseColor.g, baseColor.b, _brushOpacity * 0.2f);
             Handles.DrawSolidDisc(hit.point, hit.normal, _brushSize);
+
+            // Inner disc: full-strength zone (opacity reflects brush opacity)
+            Handles.color = new Color(baseColor.r, baseColor.g, baseColor.b, _brushOpacity);
+            Handles.DrawSolidDisc(hit.point, hit.normal, falloffRadius);
+
+            // Wire outlines
             Handles.color = Color.white;
             Handles.DrawWireDisc(hit.point, hit.normal, _brushSize);
             Handles.color = new Color(1f, 1f, 1f, 0.5f);
-            Handles.DrawWireDisc(hit.point, hit.normal, _brushSize * _brushFalloff);
+            Handles.DrawWireDisc(hit.point, hit.normal, falloffRadius);
         }
 
         private void ProcessSceneInput(Event evt, bool isHit, RaycastHit hit)
@@ -427,9 +467,9 @@ namespace GTK.VertexPaint
                 if (evt.type == EventType.MouseDrag)
                 {
                     _brushSize += evt.delta.x * 0.005f;
-                    _brushSize = Mathf.Clamp(_brushSize, 0.01f, 5f);
+                    _brushSize = Mathf.Clamp(_brushSize, _brushSizeMin, _brushSizeMax);
                     _resizing = true;
-                    _status = $"Size: {_brushSize:F2}";
+                    _status = $"Size: {_brushSize:F3}";
                 }
                 if (evt.type == EventType.MouseUp) _resizing = false;
                 evt.Use();
@@ -547,12 +587,10 @@ namespace GTK.VertexPaint
             if (colors == null || colors.Length == 0)
                 colors = new Color[verts.Length];
 
-            // Lazy-build adjacency
             if (_adjacency == null)
                 _adjacency = VertexPaintUtility.BuildAdjacency(
                     _workingMesh.triangles, verts.Length);
 
-            // Ensure smooth buffer is sized correctly
             if (_smoothBuffer == null || _smoothBuffer.Length != colors.Length)
                 _smoothBuffer = new Color[colors.Length];
             System.Array.Copy(colors, _smoothBuffer, colors.Length);
@@ -589,7 +627,7 @@ namespace GTK.VertexPaint
             _hasUnsavedChanges = true;
         }
 
-        // ─── Preview ─────────────────────────────────────────────────────
+        // ─── Preview ────────────────────────────────────────────────────
         private void EnablePreview()
         {
             if (_lastTarget == null || _sourceMesh == null) return;
