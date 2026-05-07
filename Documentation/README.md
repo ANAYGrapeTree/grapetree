@@ -1,7 +1,7 @@
 # Grapetree Toolkit (GTK) 使用文档
 
 > **Package:** `com.grapetree.gtk`  
-> **Version:** 0.2.4  
+> **Version:** 0.2.5  
 > **Unity:** 2022.3+ (兼容团结引擎)
 
 ---

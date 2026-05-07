@@ -1,6 +1,6 @@
 {
-  "name": "@anaygrapetree/com.grapetree.gtk",
-  "version": "0.2.4",
+  "name": "com.grapetree.gtk",
+  "version": "0.2.5",
   "displayName": "Grapetree Toolkit (GTK)",
   "description": "A collection of Unity Editor tools for Technical Artists — texture processing, vertex painting, mesh utilities, and pipeline helpers.",
   "unity": "2022.3",

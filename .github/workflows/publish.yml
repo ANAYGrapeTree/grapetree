@@ -21,7 +21,10 @@ jobs:
           scope: '@anaygrapetree'
 
       - name: Publish to GitHub Packages
-        run: npm publish
+        run: |
+          # Scoped name required by GitHub Packages, but Unity needs unscoped
+          node -e "const p=require('./package.json'); p.name='@anaygrapetree/'+p.name; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2)+'\n')"
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
