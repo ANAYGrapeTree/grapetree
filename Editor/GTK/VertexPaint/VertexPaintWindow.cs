@@ -165,31 +165,47 @@ namespace GTK.VertexPaint
         private void DrawActionsSection()
         {
             EditorGUILayout.BeginHorizontal();
-
             GUILayout.FlexibleSpace();
 
-            _isEditing = GUILayout.Toggle(_isEditing,
-                EditorGUIUtility.IconContent("EditCollider"), "Button",
-                GUILayout.Width(36), GUILayout.Height(28));
-            if (GUILayout.Button(new GUIContent("Paint", "Enable scene-view painting (C)"),
-                    GUILayout.Width(60), GUILayout.Height(28)))
+            var paintIcon = EditorGUIUtility.IconContent("EditCollider").image;
+            string paintLabel = _isEditing ? " Stop Painting" : " Start Paint";
+            if (GUILayout.Button(new GUIContent(paintLabel, paintIcon, "Toggle painting mode (C)"),
+                    GUILayout.Width(130), GUILayout.Height(28)))
+            {
                 _isEditing = !_isEditing;
+            }
 
             GUILayout.Space(8);
 
-            _isPreview = GUILayout.Toggle(_isPreview,
-                EditorGUIUtility.IconContent("VisibilityOn"), "Button",
-                GUILayout.Width(36), GUILayout.Height(28));
-            if (GUILayout.Button(new GUIContent("Preview", "Toggle vertex-color preview"),
-                    GUILayout.Width(60), GUILayout.Height(28)))
+            var previewIcon = EditorGUIUtility.IconContent("VisibilityOn").image;
+            string previewLabel = _isPreview ? " Stop Preview" : " Start Preview";
+            if (GUILayout.Button(new GUIContent(previewLabel, previewIcon, "Toggle vertex-color preview"),
+                    GUILayout.Width(130), GUILayout.Height(28)))
             {
-                _isPreview = !_isPreview;
-                if (_isPreview) EnablePreview();
-                else DisablePreview();
+                if (_isPreview)
+                {
+                    _isPreview = false;
+                    DisablePreview();
+                }
+                else
+                {
+                    _isPreview = true;
+                    EnablePreview();
+                }
             }
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
+
+            // Status line
+            string modeInfo = "";
+            if (_isEditing) modeInfo += "\u25cf Painting";
+            if (_isEditing && _isPreview) modeInfo += "  |  ";
+            if (_isPreview) modeInfo += "\u25cf Previewing";
+            if (!string.IsNullOrEmpty(modeInfo))
+                EditorGUILayout.LabelField(modeInfo, EditorStyles.boldLabel);
+            else
+                EditorGUILayout.LabelField("Idle", EditorStyles.miniLabel);
         }
 
         private void DrawStatusSection()
