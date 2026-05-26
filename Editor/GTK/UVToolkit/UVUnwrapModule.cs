@@ -14,8 +14,6 @@ namespace GTK.UVToolkit
         private float _areaError = 15f;
         private float _hardAngle = 88f;
         private float _packMargin = 0.01f;
-        private int _selectedChannel;
-
         private static readonly string[] ChannelLabels = { "UV0", "UV1 (UV2)", "UV2 (UV3)", "UV3 (UV4)", "UV4 (UV5)" };
 
         public void SetTarget(GameObject obj)
@@ -75,7 +73,6 @@ namespace GTK.UVToolkit
             _hardAngle = EditorGUILayout.Slider("Hard Angle (°)", _hardAngle, 30f, 180f);
             _packMargin = EditorGUILayout.Slider("Pack Margin", _packMargin, 0.001f, 0.1f);
             EditorGUILayout.EndVertical();
-            _selectedChannel = EditorGUILayout.Popup("Target Channel", _selectedChannel, ChannelLabels);
         }
 
         private void DrawActions()

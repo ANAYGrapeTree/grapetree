@@ -20,6 +20,7 @@ namespace GTK.UVToolkit
         private Dictionary<int, float> _triDensities;
         private float _minDensity, _maxDensity, _avgDensity, _medianDensity;
         private Mesh _heatMesh;
+        private Material _heatMat;
 
         public float AverageDensity => _avgDensity;
         public float MinDensity => _minDensity;
@@ -255,12 +256,15 @@ namespace GTK.UVToolkit
             if (_heatMesh == null || !_hasAnalyzed || _target == null) return;
             if (Event.current.type != EventType.Repaint) return;
 
-            var mat = new Material(Shader.Find("Hidden/Internal-Colored"))
-                { hideFlags = HideFlags.HideAndDontSave };
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.SetPass(0);
+            if (_heatMat == null)
+            {
+                _heatMat = new Material(Shader.Find("Hidden/Internal-Colored"))
+                    { hideFlags = HideFlags.HideAndDontSave };
+                _heatMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                _heatMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                _heatMat.SetInt("_ZWrite", 0);
+            }
+            _heatMat.SetPass(0);
 
             GL.PushMatrix();
             GL.MultMatrix(_target.transform.localToWorldMatrix);
