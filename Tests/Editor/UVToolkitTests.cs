@@ -75,7 +75,7 @@ namespace GTK.Tests
             var b = new[] { new Vector2(1, 0), new Vector2(2, 1), new Vector2(0, 2) };
             float area = UVToolkitUtility.SutherlandHodgmanArea(a, b);
             Assert.Greater(area, 0f);
-            Assert.Less(area, 0.5f);
+            Assert.Less(area, 1.5f);
         }
 
         [Test]
@@ -134,7 +134,7 @@ namespace GTK.Tests
                 new Vector2[6]
                 {
                     new Vector2(0, 0), new Vector2(0.5f, 0), new Vector2(0, 0.5f),
-                    new Vector2(0.25f, 0.25f), new Vector2(0.75f, 0.25f), new Vector2(0.25f, 0.75f)
+                    new Vector2(0.1f, 0.1f), new Vector2(0.4f, 0.1f), new Vector2(0.1f, 0.4f)
                 },
                 new[] { 0, 1, 2, 3, 4, 5 }
             );

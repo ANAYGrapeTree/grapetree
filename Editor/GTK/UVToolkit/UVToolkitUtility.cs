@@ -15,50 +15,61 @@ namespace GTK.UVToolkit
 
         public static float SutherlandHodgmanArea(Vector2[] triA, Vector2[] triB)
         {
-            var clipPoly = new List<Vector2>(triB);
+            var clip = new List<Vector2>(triB);
 
             for (int edge = 0; edge < 3; edge++)
             {
                 var cp1 = triA[edge];
                 var cp2 = triA[(edge + 1) % 3];
-                var normal = new Vector2(-(cp2.y - cp1.y), cp2.x - cp1.x);
+                float nx = -(cp2.y - cp1.y);
+                float ny = cp2.x - cp1.x;
 
-                var input = new List<Vector2>(clipPoly);
-                clipPoly.Clear();
+                var input = new List<Vector2>(clip);
+                clip.Clear();
                 if (input.Count == 0) break;
 
-                var start = input[^1];
-                bool startInside = Vector2.Dot(start - cp1, normal) >= 0;
-
-                foreach (var end in input)
+                int n = input.Count;
+                var s = input[n - 1];
+                bool sIn = (s.x - cp1.x) * nx + (s.y - cp1.y) * ny >= 0f;
+                for (int i = 0; i < n; i++)
                 {
-                    bool endInside = Vector2.Dot(end - cp1, normal) >= 0;
-                    if (endInside)
+                    var e = input[i];
+                    bool eIn = (e.x - cp1.x) * nx + (e.y - cp1.y) * ny >= 0f;
+                    if (eIn)
                     {
-                        if (!startInside)
+                        if (!sIn)
                         {
-                            float t = Vector2.Dot(cp1 - start, normal) / Vector2.Dot(end - start, normal);
-                            clipPoly.Add(Vector2.Lerp(start, end, t));
+                            float d = (e.x - s.x) * nx + (e.y - s.y) * ny;
+                            if (d != 0f)
+                            {
+                                float t = ((cp1.x - s.x) * nx + (cp1.y - s.y) * ny) / d;
+                                if (t > 0f && t < 1f)
+                                    clip.Add(new Vector2(s.x + (e.x - s.x) * t, s.y + (e.y - s.y) * t));
+                            }
                         }
-                        clipPoly.Add(end);
+                        clip.Add(e);
                     }
-                    else if (startInside)
+                    else if (sIn)
                     {
-                        float t = Vector2.Dot(cp1 - start, normal) / Vector2.Dot(end - start, normal);
-                        clipPoly.Add(Vector2.Lerp(start, end, t));
+                        float d = (e.x - s.x) * nx + (e.y - s.y) * ny;
+                        if (d != 0f)
+                        {
+                            float t = ((cp1.x - s.x) * nx + (cp1.y - s.y) * ny) / d;
+                            if (t > 0f && t < 1f)
+                                clip.Add(new Vector2(s.x + (e.x - s.x) * t, s.y + (e.y - s.y) * t));
+                        }
                     }
-                    start = end;
-                    startInside = endInside;
+                    s = e;
+                    sIn = eIn;
                 }
             }
 
-            if (clipPoly.Count < 3) return 0f;
+            if (clip.Count < 3) return 0f;
             float area = 0f;
-            for (int i = 0; i < clipPoly.Count; i++)
+            for (int i = 0; i < clip.Count; i++)
             {
-                int j = (i + 1) % clipPoly.Count;
-                area += clipPoly[i].x * clipPoly[j].y;
-                area -= clipPoly[j].x * clipPoly[i].y;
+                int j = (i + 1) % clip.Count;
+                area += clip[i].x * clip[j].y - clip[j].x * clip[i].y;
             }
             return Mathf.Abs(area) / 2f;
         }
