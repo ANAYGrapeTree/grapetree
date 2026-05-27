@@ -36,7 +36,8 @@ namespace GTK.SceneAnalyzer
 
                 // Mesh stats
                 int triCount = 0, vertCount = 0;
-                if (renderer is MeshFilter mf && mf.sharedMesh != null)
+                var mf = renderer.gameObject.GetComponent<MeshFilter>();
+                if (mf != null && mf.sharedMesh != null)
                 {
                     triCount = mf.sharedMesh.triangles.Length / 3;
                     vertCount = mf.sharedMesh.vertexCount;
