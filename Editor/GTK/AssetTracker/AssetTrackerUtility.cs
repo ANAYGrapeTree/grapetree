@@ -76,6 +76,15 @@ namespace GTK.AssetTracker
                 }
             }
 
+            // Populate reference count from material references
+            var keys = new List<string>(map.Keys);
+            foreach (var guid in keys)
+            {
+                var info = map[guid];
+                info.referenceCount = info.referencedBy.Count;
+                map[guid] = info;
+            }
+
             return map;
         }
 
