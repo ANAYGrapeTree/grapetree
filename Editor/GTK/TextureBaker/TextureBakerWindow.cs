@@ -39,7 +39,7 @@ namespace GTK.TextureBaker
 
         private void OnDisable()
         {
-            if (_previewTex != null) { Object.DestroyImmediate(_previewTex); _previewTex = null; }
+            if (_previewTex != null) { UnityEngine.Object.DestroyImmediate(_previewTex); _previewTex = null; }
         }
 
         private void OnGUI()
@@ -100,12 +100,12 @@ namespace GTK.TextureBaker
                 Execute(() => TextureBakerUtility.ConvertNormalFormat(_convertSource, _convertToDX));
         }
 
-        private void Execute(Func<Texture2D> action)
+        private void Execute(System.Func<Texture2D> action)
         {
             EditorUtility.DisplayProgressBar("Texture Baker", "Processing...", 0.5f);
             try
             {
-                if (_previewTex != null) { Object.DestroyImmediate(_previewTex); _previewTex = null; }
+                if (_previewTex != null) { UnityEngine.Object.DestroyImmediate(_previewTex); _previewTex = null; }
                 _previewTex = action();
                 Debug.Log($"Texture Baker: {_previewTex.width}x{_previewTex.height} result ready.");
             }

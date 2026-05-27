@@ -1,5 +1,4 @@
 using UnityEngine;
-using System;
 
 namespace GTK.TextureBaker
 {
@@ -16,14 +15,14 @@ namespace GTK.TextureBaker
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
                 {
-                    float tl = Sample(hPixels, w, h, x - 1, y + 1).r;
-                    float t = Sample(hPixels, w, h, x, y + 1).r;
-                    float tr = Sample(hPixels, w, h, x + 1, y + 1).r;
-                    float l = Sample(hPixels, w, h, x - 1, y).r;
-                    float r = Sample(hPixels, w, h, x + 1, y).r;
-                    float bl = Sample(hPixels, w, h, x - 1, y - 1).r;
-                    float b = Sample(hPixels, w, h, x, y - 1).r;
-                    float br = Sample(hPixels, w, h, x + 1, y - 1).r;
+                    float tl = Sample(hPixels, w, h, x - 1, y + 1);
+                    float t = Sample(hPixels, w, h, x, y + 1);
+                    float tr = Sample(hPixels, w, h, x + 1, y + 1);
+                    float l = Sample(hPixels, w, h, x - 1, y);
+                    float r = Sample(hPixels, w, h, x + 1, y);
+                    float bl = Sample(hPixels, w, h, x - 1, y - 1);
+                    float b = Sample(hPixels, w, h, x, y - 1);
+                    float br = Sample(hPixels, w, h, x + 1, y - 1);
 
                     float dx = (tr + 2f * r + br) - (tl + 2f * l + bl);
                     float dy = (bl + 2f * b + br) - (tl + 2f * t + tr);
