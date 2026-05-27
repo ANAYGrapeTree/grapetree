@@ -52,7 +52,7 @@ namespace GTK.Tests
             var n = MakeNormalMap(0f, 1f, 0f); // Y-up (GL)
             var dx = TextureBakerUtility.ConvertNormalFormat(n, true);
             var p = dx.GetPixels();
-            Assert.AreEqual(0.5f, p[0].g, 0.01f); // Y-down => 0.5
+            Assert.AreEqual(0f, p[0].g, 0.01f); // Y-down => 0.0
         }
 
         [Test]
@@ -61,7 +61,7 @@ namespace GTK.Tests
             var n = MakeNormalMap(0f, 0.5f, 0f); // Y-down (DX)
             var gl = TextureBakerUtility.ConvertNormalFormat(n, false);
             var p = gl.GetPixels();
-            Assert.AreEqual(1f, p[0].g, 0.01f); // Y-up => 1.0
+            Assert.AreEqual(0.25f, p[0].g, 0.01f); // Y-up => 0.25
         }
 
         [Test]

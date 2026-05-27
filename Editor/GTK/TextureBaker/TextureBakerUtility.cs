@@ -50,15 +50,16 @@ namespace GTK.TextureBaker
             var pixels = readable.GetPixels();
             var height = new float[w * h];
 
-            // Simple integration: accumulate Y-component deviation
+            // Integrate height from normal gradients: dh/dx = -nx/nz
             for (int y = 0; y < h; y++)
             {
                 float row = 0f;
                 for (int x = 0; x < w; x++)
                 {
                     var n = pixels[y * w + x];
-                    float ny = (n.g * 2f) - 1f;
-                    row += 1f - ny;
+                    float nx = (n.r * 2f) - 1f;
+                    float nz = (n.b * 2f) - 1f;
+                    row += nz > 0.001f ? -nx / nz : 0f;
                     height[y * w + x] = row;
                 }
             }
@@ -91,9 +92,11 @@ namespace GTK.TextureBaker
             var pixels = readable.GetPixels();
             var outPixels = new Color[w * h];
 
+            // DX inverts the G channel relative to GL: DX_G = 1 - GL_G
+            // Both directions invert: gl_g = 1 - dx_g, dx_g = 1 - gl_g
             for (int i = 0; i < pixels.Length; i++)
             {
-                float g = toDX ? Mathf.Clamp01(2f * (0.5f - pixels[i].g)) : 1f - 2f * (0.5f - pixels[i].g);
+                float g = 1f - pixels[i].g;
                 outPixels[i] = new Color(pixels[i].r, g, pixels[i].b, pixels[i].a);
             }
 
